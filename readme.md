@@ -150,16 +150,28 @@ BACKUP_ROOT = "/home/backup/NetworkBackups"
 
 # Configure Switch Inventory
 
-Edit `devices.csv`.
+Create a file named `devices.csv` in the project folder.
+
+The script expects the file to contain a CSV header like this:
+
+```csv
+hostname,ip,username,password
+```
 
 Example
 
-```
+```csv
 hostname,ip,username,password
 CoreSW,192.168.1.10,backup,password123
 AccessSW1,192.168.1.11,backup,password123
 AccessSW2,192.168.1.12,backup,password123
 ```
+
+Important notes:
+- The file name must be exactly `devices.csv`
+- The first row must contain the column names: `hostname,ip,username,password`
+- Each following row represents one switch
+- Keep the password in the `password` column only if you are comfortable storing it in plain text locally
 
 ---
 
