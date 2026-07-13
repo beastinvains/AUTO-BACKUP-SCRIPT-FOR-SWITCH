@@ -1,0 +1,4 @@
+hostname,ip,username,password
+CoreSW,192.168.1.10,backup,password123
+AccessSW1,192.168.1.11,backup,password123
+AccessSW2,192.168.1.12,backup,password123
