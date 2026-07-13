@@ -126,6 +126,9 @@ Install dependencies.
 
 ```
 pip install -r requirements.txt
+
+for linex you can use 
+sudo apt install python3-xyz
 ```
 
 ---
