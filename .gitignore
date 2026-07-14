@@ -1,2 +1,6 @@
 devices.csv
 *.log
+.venv/
+__pycache__/
+.env
+*.py[cod]
