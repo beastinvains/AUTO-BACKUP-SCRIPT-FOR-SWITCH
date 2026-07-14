@@ -15,7 +15,7 @@ The project is designed for network administrators who want to automate switch b
 - Read switch inventory from CSV
 - Automatic Year → Month → Day folder creation
 - Separate folder for each switch
-- Separate output file for each command
+- Single timestamped backup file per switch
 - Detailed logging
 - Continues even if one switch fails
 - Compatible with Windows and Linux
@@ -45,16 +45,12 @@ JuniperBackup/
     │       └── 2026-07-13/
     │           │
     │           ├── CoreSW/
-    │           │   ├── configuration.cfg
-    │           │   ├── version.txt
-    │           │   ├── system_information.txt
-    │           │   ├── interfaces.txt
-    │           │   ├── lldp_neighbors.txt
-    │           │   ├── chassis_hardware.txt
-    │           │   └── virtual_chassis.txt
+    │           │   └── backup_2026-07-13_02-00-05.txt
     │           │
     │           ├── AccessSW1/
+    │           │   └── backup_2026-07-13_02-01-10.txt
     │           └── AccessSW2/
+    │               └── backup_2026-07-13_02-02-30.txt
 ```
 
 ---
@@ -74,7 +70,7 @@ Day
     ↓
 Switch Name
     ↓
-Command Output Files
+Timestamped Backup File
 ```
 
 Example
@@ -85,11 +81,7 @@ Backups
     └── 07-July
         └── 2026-07-13
             └── CoreSW
-                ├── configuration.cfg
-                ├── version.txt
-                ├── interfaces.txt
-                ├── lldp_neighbors.txt
-                └── ...
+                └── backup_2026-07-13_02-00-05.txt
 ```
 
 This structure makes it easy to locate backups for a specific switch on a specific day.
@@ -98,15 +90,26 @@ This structure makes it easy to locate backups for a specific switch on a specif
 
 # Commands Collected
 
-| File | Junos Command | Purpose |
-|------|---------------|----------|
-| configuration.cfg | show configuration \| display set | Configuration backup |
-| version.txt | show version | Software version |
-| system_information.txt | show system information | Hostname, serial number, uptime |
-| interfaces.txt | show interfaces terse | Interface status |
-| lldp_neighbors.txt | show lldp neighbors detail | Physical neighbor information |
-| chassis_hardware.txt | show chassis hardware | Hardware inventory |
-| virtual_chassis.txt | show virtual-chassis | Virtual Chassis information |
+Each generated backup file contains a clear header followed by all requested Junos command outputs, labeled in order:
+
+- show configuration | display set | no-more
+- show spanning-tree interface | no-more
+- show spanning-tree bridge | no-more
+- show lldp neighbors | no-more
+- show vlan brief | no-more
+- show interfaces terse | no-more
+- show arp no-resolve | no-more
+- show arp no-resolve state | no-more
+- show arp no-resolve reference-count | no-more
+- show virtual-chassis vc-port | no-more
+- show lacp interface | no-more
+- show version | no-more
+- show chassis hardware | no-more
+- show chassis mac-addresses | no-more
+- show chassis environment | no-more
+- show system uptime | no-more
+- show configuration | display set | match ntp
+- show ntp status
 
 ---
 
@@ -191,10 +194,11 @@ The script will
 1. Read all switches from devices.csv
 2. Connect using SSH
 3. Execute all configured commands
-4. Save each command output into a separate file
-5. Disconnect
-6. Continue to the next switch
-7. Generate backup.log
+4. Save all outputs into one timestamped file per switch
+5. Add a clear header with device name, IP, and timestamp inside the file
+6. Disconnect
+7. Continue to the next switch
+8. Generate backup.log
 
 ---
 
