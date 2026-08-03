@@ -1,0 +1,13 @@
+body { background: #f8f9fa; }
+.stat-card { min-height: 120px; }
+.log-view, .accordion pre { white-space: pre-wrap; word-break: break-word; }
+.log-view { background: #212529; color: #f8f9fa; border-radius: .375rem; padding: 1rem; max-height: 65vh; overflow: auto; }
+mark { padding: 0; background: #ffe69c; }
+.health-card { transition: transform .15s ease, box-shadow .15s ease; border-width: 2px; }
+.health-card:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .12); }
+.border-healthy { border-color: var(--bs-success) !important; }
+.border-warning { border-color: var(--bs-warning) !important; }
+.border-critical { border-color: var(--bs-danger) !important; }
+.border-failed { border-color: var(--bs-secondary) !important; }
+.health-alert { border-left: 4px solid var(--bs-danger); background: var(--bs-danger-bg-subtle); padding: .75rem; border-radius: .25rem; color: var(--bs-danger-text-emphasis); }
+.connected-interfaces { border-top: 1px solid var(--bs-border-color); padding-top: .75rem; }

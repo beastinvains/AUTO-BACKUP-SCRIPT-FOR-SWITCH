@@ -1,2 +1,4 @@
-pandas>=2.1.4
-netmiko>=4.3.0
+netmiko
+pandas
+python-dotenv
+Flask

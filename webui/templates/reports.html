@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h1 class="h3 mb-1">Network Health Dashboard</h1><p class="text-muted mb-0">Health is calculated from the current daily report's command outputs.</p></div></div>
+<section id="health-summary" class="row g-3 mb-4"></section>
+<section class="card mb-4"><div class="card-body"><div class="row g-3 align-items-end"><div class="col-lg-5"><label class="form-label" for="health-search">Search hostname, IP, command, or output</label><input id="health-search" class="form-control" value="{{ query }}" placeholder="Search current report"></div><div class="col-lg-7"><div class="small text-muted mb-1">Filters</div><div id="health-filters" class="d-flex gap-2 flex-wrap"></div></div></div></div></section>
+<section id="health-cards" class="row g-4"></section>
+<template id="no-results"><div class="col-12"><div class="alert alert-light border">No devices match the current search and filters.</div></div></template>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/health-dashboard.js') }}"></script><script>window.healthDashboard.init({ devices: {{ devices|tojson }}, reports: {{ reports|tojson }}, detailUrl: {{ detail_url|tojson }}, query: {{ query|tojson }} });</script>{% endblock %}

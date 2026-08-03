@@ -1,263 +1,118 @@
-# Juniper Switch Backup Automation
+# Network Switch Backup Automation
 
-## Overview
+This application connects to Cisco and Juniper switches over SSH, runs backup commands, and saves one timestamped text file per switch.
 
-Juniper Switch Backup Automation is a Python-based utility that automatically connects to multiple Juniper switches over SSH, collects configuration and operational information, and stores the results in a structured directory hierarchy.
+## Install
 
-The project is designed for network administrators who want to automate switch backups and maintain organized records for auditing, troubleshooting, and disaster recovery.
+Install Python 3.10 or newer, then install the required libraries:
 
----
-
-# Features
-
-- Backup multiple Juniper switches
-- SSH connection using Netmiko
-- Read switch inventory from CSV
-- Automatic Year → Month → Day folder creation
-- Separate folder for each switch
-- Single timestamped backup file per switch
-- Detailed logging
-- Continues even if one switch fails
-- Compatible with Windows and Linux
-- Can be scheduled using Task Scheduler or Cron
-- Supports OneDrive synchronization
-
----
-
-# Project Structure
-
-```
-JuniperBackup/
-│
-├── backup.py
-├── config.py
-├── devices.csv
-├── requirements.txt
-├── README.md
-├── backup.log
-│
-└── Backups/
-    │
-    ├── 2026/
-    │
-    │   └── 07-July/
-    │
-    │       └── 2026-07-13/
-    │           │
-    │           ├── CoreSW/
-    │           │   └── backup_2026-07-13_02-00-05.txt
-    │           │
-    │           ├── AccessSW1/
-    │           │   └── backup_2026-07-13_02-01-10.txt
-    │           └── AccessSW2/
-    │               └── backup_2026-07-13_02-02-30.txt
+```bash
+python -m pip install -r requirements.txt
 ```
 
----
+On Debian/Ubuntu Linux, install Python and pip if needed:
 
-# Folder Structure
-
-The backup folder is organized by date.
-
-```
-Backups
-    ↓
-Year
-    ↓
-Month
-    ↓
-Day
-    ↓
-Switch Name
-    ↓
-Timestamped Backup File
+```bash
+sudo apt install python3 python3-pip
 ```
 
-Example
+## Add devices
 
-```
-Backups
-└── 2026
-    └── 07-July
-        └── 2026-07-13
-            └── CoreSW
-                └── backup_2026-07-13_02-00-05.txt
-```
-
-This structure makes it easy to locate backups for a specific switch on a specific day.
-
----
-
-# Commands Collected
-
-Each generated backup file contains a clear header followed by all requested Junos command outputs, labeled in order:
-
-- show configuration | display set | no-more
-- show spanning-tree interface | no-more
-- show spanning-tree bridge | no-more
-- show lldp neighbors | no-more
-- show vlan brief | no-more
-- show interfaces terse | no-more
-- show arp no-resolve | no-more
-- show arp no-resolve state | no-more
-- show arp no-resolve reference-count | no-more
-- show virtual-chassis vc-port | no-more
-- show lacp interface | no-more
-- show version | no-more
-- show chassis hardware | no-more
-- show chassis mac-addresses | no-more
-- show chassis environment | no-more
-- show system uptime | no-more
-- show configuration | display set | match ntp
-- show ntp status
-
----
-
-# Prerequisites
-
-- Python 3.10 or later
-- SSH enabled on Juniper switches
-- Network connectivity to switches
-
----
-
-# Installation
-
-Clone or copy the project.
-
-Install dependencies.
-
-```
-pip install -r requirements.txt
-
-for linex you can use 
-sudo apt install python3-xyz
-```
-
----
-
-# Configure Backup Location
-
-Edit `config.py`.
-
-Example
-
-```python
-BACKUP_ROOT = r"C:\Users\Backup\OneDrive\NetworkBackups"
-```
-
-Linux Example
-
-```python
-BACKUP_ROOT = "/home/backup/NetworkBackups"
-```
-
----
-
-# Configure Switch Inventory
-
-Create a file named `devices.csv` in the project folder.
-
-The script expects the file to contain a CSV header like this:
+Edit `data/devices.csv`. Do not put passwords in this file.
 
 ```csv
-hostname,ip,username,password
+hostname,ip,vendor,credential_profile
+CoreSW,192.168.1.10,juniper,hq
+AccessSW1,192.168.1.11,cisco,branch
 ```
 
-Example
+`vendor` must be `juniper` or `cisco`. `credential_profile` connects a device to credentials in `.env`.
+Use the real management IP address of each switch. The included `10.0.0.1` and `10.0.0.2` entries are examples, not working devices.
 
-```csv
-hostname,ip,username,password
-CoreSW,192.168.1.10,backup,password123
-AccessSW1,192.168.1.11,backup,password123
-AccessSW2,192.168.1.12,backup,password123
+## Add credentials
+
+Create a file named `.env` in this project folder. You type the credentials into it once, using this exact naming pattern:
+
+```env
+HQ_USERNAME=backup-user
+HQ_PASSWORD=replace-with-the-hq-password
+BRANCH_USERNAME=backup-user
+BRANCH_PASSWORD=replace-with-the-branch-password
 ```
 
-Important notes:
-- The file name must be exactly `devices.csv`
-- The first row must contain the column names: `hostname,ip,username,password`
-- Each following row represents one switch
-- Keep the password in the `password` column only if you are comfortable storing it in plain text locally
+The profile `hq` in `data/devices.csv` uses `HQ_USERNAME` and `HQ_PASSWORD`. The profile `branch` uses `BRANCH_USERNAME` and `BRANCH_PASSWORD`. Names are converted to uppercase by the program.
 
----
+The program loads `.env` into its own environment when it starts, reads the matching username/password, and passes them to SSH. The credentials are not written into backup files or logs. `.env` is plain text, so protect the file and never share or commit it.
 
-# Running the Backup
+## Protect `.env`
 
-Run the script.
+Linux: run this inside the project folder. Only the account that owns the file can then read or change it.
 
-```
-python backup.py
+```bash
+chmod 600 .env
 ```
 
-The script will
+Windows: open **Command Prompt** in the project folder and run the following. Replace `YourWindowsUser` with your Windows sign-in name. It removes inherited access and grants access only to you.
 
-1. Read all switches from devices.csv
-2. Connect using SSH
-3. Execute all configured commands
-4. Save all outputs into one timestamped file per switch
-5. Add a clear header with device name, IP, and timestamp inside the file
-6. Disconnect
-7. Continue to the next switch
-8. Generate backup.log
-
----
-
-# Logging
-
-The project creates a log file named
-
-```
-backup.log
+```bat
+icacls .env /inheritance:r
+icacls .env /grant:r YourWindowsUser:(R,W)
 ```
 
-Example
+If `.env` was ever committed or shared, change those device passwords afterwards.
 
-```
-2026-07-13 02:00:05 INFO CoreSW SUCCESS
-2026-07-13 02:00:10 INFO AccessSW1 SUCCESS
-2026-07-13 02:00:13 ERROR AccessSW2 Authentication Failed
-```
+## Run
 
-Logs are useful for
+Start the application:
 
-- Troubleshooting
-- Verifying successful backups
-- Identifying failed devices
-- Auditing backup operations
-
----
-
-# Scheduling
-
-## Windows
-
-Use Task Scheduler.
-
-Run
-
-```
-python C:\JuniperBackup\backup.py
+```bash
+python app.py
 ```
 
-daily.
+It asks you to choose one of these options:
 
----
+1. **Run a backup now** — backs up every listed device immediately, then exits.
+2. **Daily schedule** — keeps the program running and starts a backup every day at 02:00.
 
-## Linux
+For unattended use, skip the question with an option:
 
-Use Cron.
-
+```bash
+python app.py --backup-now
+python app.py --schedule
 ```
-0 2 * * * python3 /home/backup/JuniperBackup/backup.py
+
+## Backup files and logs
+
+By default backups are saved under `~/NetworkBackups` on Linux and `C:\Users\Backup\OneDrive\NetworkBackups` on Windows. The folder structure is:
+
+```text
+NetworkBackups / year / month / day / switch-name / backup_timestamp.txt
 ```
 
-This runs every day at 2:00 AM.
+Logs are written to `logs/backup.log` and shown in the terminal. Settings such as backup location, timeout, and number of parallel connections can be changed using environment variables described in `config.py`.
 
----
+## Daily operational report
 
-# Future Improvements
+Each backup run also creates or updates one `daily_report.json` file in the same date folder as that day's device backup folders. Existing `.txt` backup files are unchanged. The report holds structured operational command results for a future Web UI.
 
-Possible enhancements include:
+By default it collects these commands:
+
+- Juniper: `show chassis environment | no-more`, `show version | no-more`
+- Cisco: `show environment`, `show version`
+
+Set `REPORT_COMMANDS` in `.env` to replace the list. The value must be one line of valid JSON:
+
+```env
+REPORT_COMMANDS={"cisco":["show version","show environment"],"juniper":["show version | no-more","show chassis environment | no-more"]}
+```
+
+Commands already collected by the normal backup are reused for the report and are not sent to the device a second time. A command failure is stored in `daily_report.json` without preventing the normal device backup from completing.
+
+If a device accepts a connection but is not responding as an SSH server, the application waits 15 seconds before reporting an SSH banner error. Change this only for unusually slow devices:
+
+```env
+BANNER_TIMEOUT=30
+```
 
 - SSH key authentication
 - Email notifications

@@ -1,0 +1,6 @@
+{
+  "backup_time": "02:00",
+  "backup_directory": "~/NetworkBackups",
+  "max_workers": 4,
+  "retention_days": 30
+}
