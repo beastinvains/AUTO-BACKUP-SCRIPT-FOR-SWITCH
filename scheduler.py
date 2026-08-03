@@ -15,6 +15,7 @@ class BackupScheduler:
         self._thread = None
         self._lock = threading.Lock()
         self._running = False
+        self._last_scheduled_date = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -40,11 +41,14 @@ class BackupScheduler:
             now = datetime.now()
             if self.config.schedule.lower() == "daily":
                 target_hour, target_minute = self._backup_time()
-                if now.hour == target_hour and now.minute == target_minute and now.second < 5:
+                if (
+                    now.hour == target_hour
+                    and now.minute == target_minute
+                    and self._last_scheduled_date != now.date()
+                ):
+                    self._last_scheduled_date = now.date()
                     self._execute_once()
-                    self._stop_event.wait(60)
-                else:
-                    self._stop_event.wait(5)
+                self._stop_event.wait(5)
             else:
                 self._execute_once()
                 self._stop_event.wait(60)

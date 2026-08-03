@@ -174,7 +174,7 @@ class BackupRunner:
                 return False
             self._started_at, self._started_tick = datetime.now(), monotonic()
             self._message = f"{source.capitalize()} backup is running"
-            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread = threading.Thread(target=self._run, args=(source,), daemon=True)
             self._thread.start()
             return True
 
@@ -185,8 +185,9 @@ class BackupRunner:
             elapsed = monotonic() - self._started_tick if running and self._started_tick else 0
             return {"running": running, "message": self._message, "elapsed_seconds": round(elapsed)}
 
-    def _run(self) -> None:
+    def _run(self, source: str) -> None:
         """Delegate directly to the existing backup entry points."""
+        logger = None
         try:
             from backup import backup_devices
             from credentials import load_environment
@@ -194,12 +195,16 @@ class BackupRunner:
             from logger import setup_logger
 
             config = load_config()
-            load_environment(config.env_file)
             logger = setup_logger(config.log_file, config.log_level)
+            logger.info("Starting %s backup from Web UI", source)
+            load_environment(config.env_file)
             results = backup_devices(load_devices(config.devices_file), config, logger)
             successful = sum(item.get("status") == "success" for item in results)
             message = f"Finished: {successful}/{len(results)} successful"
+            logger.info("%s backup from Web UI finished: %s", source.capitalize(), message)
         except Exception as exc:
             message = f"Backup failed: {exc}"
+            if logger is not None:
+                logger.error("%s backup from Web UI failed: %s", source.capitalize(), exc)
         with self._lock:
             self._message = message
