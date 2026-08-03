@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import csv
+import ipaddress
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,6 +12,7 @@ from time import monotonic
 from typing import Any
 
 from config import SETTINGS_FILE, load_config, load_settings
+from devices import SUPPORTED_VENDORS, _split_host_and_port
 
 
 def latest_report() -> dict[str, Any]:
@@ -98,6 +101,62 @@ def filtered_log_lines(level: str, query: str) -> list[str]:
     return [line.rstrip("\n") for line in lines if (not level or f" {level} " in line) and (not query or query.casefold() in line.casefold())]
 
 
+INVENTORY_FIELDS = ("hostname", "ip", "vendor", "credential_profile")
+
+
+def inventory_devices() -> list[dict[str, str]]:
+    """Read the configured device CSV for the UI inventory page."""
+    try:
+        with open(load_config().devices_file, "r", encoding="utf-8", newline="") as handle:
+            return [{field: str(row.get(field, "")).strip() for field in INVENTORY_FIELDS} for row in csv.DictReader(handle)]
+    except OSError:
+        return []
+
+
+def add_inventory_device(values: dict[str, str]) -> None:
+    """Validate and append one device to the configured CSV inventory."""
+    device = {field: values.get(field, "").strip() for field in INVENTORY_FIELDS}
+    if not device["hostname"] or not device["credential_profile"]:
+        raise ValueError("Hostname and credential profile are required.")
+    if device["vendor"].lower() not in SUPPORTED_VENDORS:
+        raise ValueError(f"Vendor must be one of: {', '.join(sorted(SUPPORTED_VENDORS))}.")
+    try:
+        host, port = _split_host_and_port(device["ip"])
+        ipaddress.ip_address(host)
+        if port is not None and not 1 <= port <= 65535:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError("Enter a valid IP address, optionally followed by :port.") from exc
+    devices = inventory_devices()
+    if any(item["hostname"].casefold() == device["hostname"].casefold() for item in devices):
+        raise ValueError("A device with this hostname already exists.")
+    device["vendor"] = device["vendor"].lower()
+    devices.append(device)
+    _save_inventory(devices)
+
+
+def remove_inventory_device(hostname: str) -> bool:
+    """Remove one device by hostname and report whether it existed."""
+    devices = inventory_devices()
+    remaining = [item for item in devices if item["hostname"] != hostname]
+    if len(remaining) == len(devices):
+        return False
+    _save_inventory(remaining)
+    return True
+
+
+def _save_inventory(devices: list[dict[str, str]]) -> None:
+    """Atomically replace the configured CSV while retaining its simple schema."""
+    path = load_config().devices_file
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".csv.tmp")
+    with open(temporary, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=INVENTORY_FIELDS)
+        writer.writeheader()
+        writer.writerows(devices)
+    temporary.replace(path)
+
+
 class BackupRunner:
     """Run the existing backup engine once at a time for the local UI."""
 
@@ -108,13 +167,13 @@ class BackupRunner:
         self._started_tick: float | None = None
         self._message = "Idle"
 
-    def start(self) -> bool:
+    def start(self, source: str = "manual") -> bool:
         """Start a background backup, unless one is already active."""
         with self._lock:
             if self._thread and self._thread.is_alive():
                 return False
             self._started_at, self._started_tick = datetime.now(), monotonic()
-            self._message = "Backup is running"
+            self._message = f"{source.capitalize()} backup is running"
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
             return True

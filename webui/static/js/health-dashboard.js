@@ -21,7 +21,10 @@ window.healthDashboard = (() => {
   }
 
   function powerSummary(text) {
-    const lines = text.split('\n').filter((line) => /power supply|\bpsu\b/i.test(line));
+    const lines = text.split('\n').filter((line) =>
+      /power supply|\bpsu\b/i.test(line)
+      && /\bis ok\b|\bok\b|not present|absent|not installed|not available|fail|not ok|fault|down|critical|\bpresent\b/i.test(line)
+    );
     if (!lines.length) return null;
     const summary = { total: lines.length, ok: 0, absent: 0, failed: 0, unknown: 0 };
     for (const line of lines) {

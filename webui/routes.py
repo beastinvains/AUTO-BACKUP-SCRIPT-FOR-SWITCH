@@ -9,7 +9,7 @@ from typing import Any
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
-from webui.services import current_settings, filtered_log_lines, latest_report, next_backup_at, recent_reports, report_devices, save_settings
+from webui.services import add_inventory_device, current_settings, filtered_log_lines, inventory_devices, latest_report, next_backup_at, recent_reports, remove_inventory_device, report_devices, save_settings
 
 ui = Blueprint("ui", __name__)
 
@@ -116,13 +116,60 @@ def logs() -> str:
     return render_template("logs.html", lines=filtered_log_lines(level, query), level=level, query=query)
 
 
+@ui.route("/inventory", methods=["GET", "POST"])
+def inventory() -> str:
+    """List and add devices from the existing CSV inventory."""
+    if request.method == "POST":
+        try:
+            add_inventory_device(request.form.to_dict())
+        except ValueError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash("Device added to devices.csv.", "success")
+        return redirect(url_for("ui.inventory"))
+    return render_template("inventory.html", devices=inventory_devices())
+
+
+@ui.post("/inventory/<hostname>/delete")
+def delete_inventory_device(hostname: str) -> Any:
+    """Remove a device from the CSV inventory through the UI."""
+    flash("Device removed from devices.csv." if remove_inventory_device(hostname) else "Device was not found.", "success")
+    return redirect(url_for("ui.inventory"))
+
+
 @ui.post("/backup/run")
 def run_backup() -> Any:
     runner = current_app.extensions["backup_runner"]
-    started = runner.start()
+    started = runner.start("manual")
     return jsonify(runner.status()), 202 if started else 409
 
 
 @ui.get("/api/backup-status")
 def backup_status() -> Any:
     return jsonify(current_app.extensions["backup_runner"].status())
+
+
+@ui.post("/schedule/start")
+def start_schedule() -> Any:
+    """Start the existing daily scheduler for this Web UI process."""
+    scheduler = current_app.extensions["backup_scheduler"]
+    scheduler.start()
+    return jsonify({"started": scheduler.is_started()})
+
+
+@ui.post("/schedule/stop")
+def stop_schedule() -> Any:
+    """Stop the daily scheduler running in this Web UI process."""
+    scheduler = current_app.extensions["backup_scheduler"]
+    scheduler.stop()
+    return jsonify({"started": scheduler.is_started()})
+
+
+@ui.get("/api/schedule-status")
+def schedule_status() -> Any:
+    """Expose whether the Web UI's daily scheduler has been started."""
+    next_backup = next_backup_at(str(current_settings()["backup_time"]))
+    return jsonify({
+        "started": current_app.extensions["backup_scheduler"].is_started(),
+        "next_backup": next_backup.isoformat(timespec="minutes") if next_backup else None,
+    })

@@ -24,4 +24,31 @@
     update();
     window.setInterval(update, 2000);
   };
+  window.scheduleControls = () => {
+    const button = document.querySelector('#start-schedule');
+    const stopButton = document.querySelector('#stop-schedule');
+    const status = document.querySelector('#schedule-status');
+    if (!button || !status) return;
+    const update = async () => {
+      const response = await fetch('/api/schedule-status');
+      const data = await response.json();
+      button.classList.toggle('d-none', data.started);
+      stopButton.classList.toggle('d-none', !data.started);
+      status.textContent = data.started
+        ? `Daily schedule is active; waiting for ${data.next_backup || 'the configured time'}`
+        : 'Schedule not started in this Web UI';
+    };
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      await fetch('/schedule/start', { method: 'POST' });
+      update();
+    });
+    stopButton.addEventListener('click', async () => {
+      stopButton.disabled = true;
+      await fetch('/schedule/stop', { method: 'POST' });
+      stopButton.disabled = false;
+      update();
+    });
+    update();
+  };
 })();

@@ -1,5 +1,4 @@
 import threading
-import time
 from datetime import datetime
 from typing import Callable, Optional
 
@@ -20,13 +19,20 @@ class BackupScheduler:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
+        self.logger.info("Daily backup scheduler started")
 
     def stop(self) -> None:
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=2)
+        self.logger.info("Daily backup scheduler stopped")
+
+    def is_started(self) -> bool:
+        """Return whether this scheduler is currently running its loop."""
+        return bool(self._thread and self._thread.is_alive())
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -36,9 +42,9 @@ class BackupScheduler:
                 target_hour, target_minute = self._backup_time()
                 if now.hour == target_hour and now.minute == target_minute and now.second < 5:
                     self._execute_once()
-                    time.sleep(60)
+                    self._stop_event.wait(60)
                 else:
-                    time.sleep(5)
+                    self._stop_event.wait(5)
             else:
                 self._execute_once()
                 self._stop_event.wait(60)
