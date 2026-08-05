@@ -14,6 +14,7 @@ from config import AppConfig
 from credentials import get_credentials
 from devices import Device
 from logger import setup_logger
+from reports.health import parse_power_supplies_from_results
 from reports.report_manager import ReportManager
 from reports.report_models import CommandResult, DeviceReport
 from utils import build_backup_path, ensure_directory, normalize_vendor
@@ -156,6 +157,9 @@ def backup_device(
         device_report.status = "success"
         if report_manager:
             device_report.backup_file = report_manager.backup_file_reference(file_path)
+            device_report.metadata["power_supplies"] = parse_power_supplies_from_results(
+                [command.to_dict() for command in device_report.commands]
+            )
             report_manager.add_device(device_report)
         logger.info("%s | backup completed", device.hostname)
         return {"hostname": device.hostname, "status": "success", "path": str(file_path)}

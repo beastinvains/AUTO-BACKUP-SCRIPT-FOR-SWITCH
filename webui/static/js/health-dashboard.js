@@ -36,6 +36,18 @@ window.healthDashboard = (() => {
     return summary;
   }
 
+  function powerFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return null;
+    const items = Array.isArray(metadata.items) ? metadata.items : [];
+    const total = Number(metadata.total) || items.length;
+    const ok = Number(metadata.ok) || items.filter((item) => item.status === 'OK').length;
+    const failed = Number(metadata.failed) || items.filter((item) => item.status === 'Failed' || item.status === 'Absent').length;
+    const warning = Number(metadata.warning) || items.filter((item) => ['Present', 'Not Present', 'Unknown'].includes(item.status)).length;
+    const absent = items.filter((item) => item.status === 'Absent').length;
+    const unknown = items.filter((item) => item.status === 'Unknown').length;
+    return { total, ok, failed, warning, absent, unknown };
+  }
+
   function interfaceSummary(text) {
     const lines = text.split('\n');
     const connected = [];
@@ -57,7 +69,7 @@ window.healthDashboard = (() => {
     const cpu = firstNumber(text, [/CPU utilization[^:\n]*:\s*(\d+(?:\.\d+)?)%/i, /CPU[^\n]*?(\d+(?:\.\d+)?)%/i]);
     const memory = firstNumber(text, [/memory utilization[^:\n]*:\s*(\d+(?:\.\d+)?)%/i, /memory[^\n]*?(\d+(?:\.\d+)?)%/i]);
     const temperature = firstNumber(text, [/(\d+(?:\.\d+)?)\s*(?:°\s*C|degrees?\s*C|Celsius)/i]);
-    const power = powerSummary(text);
+    const power = device.metadata?.power_supplies ? powerFromMetadata(device.metadata.power_supplies) : powerSummary(text);
     const fans = componentSummary(text, 'fan');
     const interfaces = interfaceSummary(text);
     const alerts = [];
@@ -116,7 +128,7 @@ window.healthDashboard = (() => {
       const duration = metadata.backup_duration ?? 'Not Available';
       const configChanged = metadata.config_changed === undefined ? 'Not Available' : metadata.config_changed ? 'Yes' : 'No';
       const backupSize = metadata.backup_size ?? 'Not Available';
-      const power = item.power ? `${item.power.ok} / ${item.power.total} OK${item.power.absent ? ` · ${item.power.absent} absent` : ''}${item.power.failed ? ` · ${item.power.failed} failed` : ''}${item.power.unknown ? ` · ${item.power.unknown} unknown` : ''}` : 'Not Available';
+      const power = item.power ? `${item.power.ok} / ${item.power.total} OK${item.power.warning ? ` · ${item.power.warning} Warning` : ''}${item.power.failed ? ` · ${item.power.failed} Failed` : ''}` : 'Not Available';
       const fans = item.fans ? `${item.fans.total - item.fans.failed} / ${item.fans.total} OK` : 'Not Available';
       const alertBlock = item.alerts.length ? `<div class="health-alert mt-3"><strong>⚠ Alerts</strong><ul class="mb-0 mt-1">${item.alerts.map((alert) => `<li>${escapeHtml(alert)}</li>`).join('')}</ul></div>` : '';
       const href = detailUrl.replace('__HOSTNAME__', encodeURIComponent(item.hostname));
