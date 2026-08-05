@@ -4,3 +4,4 @@ devices.csv
 __pycache__/
 .env
 *.py[cod]
+test.txt

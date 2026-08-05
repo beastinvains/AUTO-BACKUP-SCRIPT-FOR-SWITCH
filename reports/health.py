@@ -10,8 +10,7 @@ _POWER_SUPPLY_LINE = re.compile(
     r"\b(?P<name>(?:FPC\s*\d+\s+)?power\s+supply(?:\s+[A-Za-z0-9]+)?)\b"
     r"[\s:,-]*"
     r"(?:is\s+)?"
-    r"(?P<status>.+?)"
-    r"\s*$"
+    r"(?P<status>OK|Present|Absent|Not\s+Present|Failed|Unknown)\b"
 )
 
 _NORMALIZED_STATUS = {
@@ -23,14 +22,16 @@ _NORMALIZED_STATUS = {
     "unknown": "Unknown",
 }
 
-_FAILED_STATUSES = {"Failed", "Absent"}
+_FAILED_STATUSES = {"Failed"}
 
 
-def _canonical_name(value: str) -> str:
+def _canonical_name(value: str, keep_fpc: bool = False) -> str:
     value = re.sub(r"\s+", " ", value.strip(), flags=re.I)
-    value = re.sub(r"(?ix)^fpc\s+\d+\s+", "", value)
+    if not keep_fpc:
+        value = re.sub(r"(?ix)^fpc\s+\d+\s+", "", value)
     value = value.title()
-    value = re.sub(r"\bFpc\b", "FPC", value)
+    if not keep_fpc:
+        value = re.sub(r"\bFpc\b", "FPC", value)
     return value
 
 
@@ -43,13 +44,22 @@ def _normalize_status(value: str) -> str:
 
 def parse_power_supplies(output: str) -> dict[str, Any]:
     """Parse unique power supplies and return structured status information."""
+    # If the output contains multiple FPC instances, keep the FPC prefix
+    # in the parsed supply name so we don't collapse per-unit supplies.
+    fpc_ids = set()
+    for line in output.splitlines():
+        m = re.search(r"(?ix)\bfpc\s+(\d+)\b", line)
+        if m:
+            fpc_ids.add(m.group(1))
+    keep_fpc = len(fpc_ids) > 1
+
     supplies: dict[str, str] = {}
     for line in output.splitlines():
         match = _POWER_SUPPLY_LINE.search(line)
         if not match:
             continue
 
-        name = _canonical_name(match.group("name"))
+        name = _canonical_name(match.group("name"), keep_fpc=keep_fpc)
         status = _normalize_status(match.group("status"))
         supplies[name] = status
 
