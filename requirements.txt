@@ -2,3 +2,8 @@ netmiko
 pandas
 python-dotenv
 Flask
+FastAPI
+uvicorn
+SQLAlchemy
+alembic
+PyYAML

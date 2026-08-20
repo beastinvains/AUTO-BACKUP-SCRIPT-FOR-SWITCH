@@ -3,5 +3,7 @@ devices.csv
 .venv/
 __pycache__/
 .env
+config/devices.yaml
+phase1.db
 *.py[cod]
 test.txt
