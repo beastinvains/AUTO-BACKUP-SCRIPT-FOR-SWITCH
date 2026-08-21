@@ -1,4 +1,9 @@
-"""Predefined command responses for the mock SSH switch."""
+"""Predefined command responses for the mock SSH switch.
+
+The project Phase 1 flow is Junos-oriented, so the mock device must answer the
+read-only discovery commands used by the Juniper adapter and keep future
+extensions easy to add without rewriting the server logic.
+"""
 
 from __future__ import annotations
 
@@ -8,103 +13,74 @@ from textwrap import dedent
 COMMAND_OUTPUTS: dict[str, str] = {
     "show version": dedent(
         """\
-        Cisco IOS XE Software, Version 17.03.04a
-        Cisco IOS Software [Amsterdam], Catalyst L3 Switch Software
-        TEST-SWITCH uptime is 3 weeks, 2 days, 4 hours, 18 minutes
-        System returned to ROM by power-on
-        System image file is "flash:packages.conf"
-
-        cisco C9300-24T (X86) processor with 8388608K/3072K bytes of memory.
-        Processor board ID FOC1234A1BC
-        24 Gigabit Ethernet interfaces
-        4 Ten Gigabit Ethernet interfaces
-
-        Configuration register is 0x102
+        Hostname: lab-ex4300
+        Model: ex4300-48p
+        Junos: 21.4R3-S5.4
+        System serial number: AB1234
+        System uptime: 14 days, 2 hours
         """
     ),
-    "show inventory": dedent(
+    "show version | no-more": dedent(
         """\
-        NAME: "1", DESCR: "Cisco Catalyst 9300-24T"
-        PID: C9300-24T         , VID: V01  , SN: FOC1234A1BC
-
-        NAME: "Switch 1 - Power Supply A", DESCR: "Switching Power Supply"
-        PID: PWR-C1-350WAC     , VID: V01  , SN: DCA12345678
-
-        NAME: "Switch 1 - FRU1", DESCR: "Network Module"
-        PID: C9300-NM-4G       , VID: V01  , SN: FOC1234N1M0
+        Hostname: lab-ex4300
+        Model: ex4300-48p
+        Junos: 21.4R3-S5.4
+        System serial number: AB1234
+        System uptime: 14 days, 2 hours
         """
     ),
-    "show environment": dedent(
+    "show interfaces terse": dedent(
         """\
-        Number of Critical alarms: 0
-        Number of Major alarms:    0
-        Number of Minor alarms:    0
-
-        Switch  1: SYSTEM TEMPERATURE is OK
-        Switch  1: FAN 1 is OK
-        Switch  1: FAN 2 is OK
-        Switch  1: FAN 3 is OK
-        Switch  1: POWER SUPPLY 1 is OK
+        Interface               Admin Link Proto    Local                 Remote
+        ge-0/0/0                up    up
+        ge-0/0/1                up    down
+        irb.10                  up    up   inet     10.0.10.2/24
         """
     ),
-    "show running-config": dedent(
+    "show interfaces terse | no-more": dedent(
         """\
-        Building configuration...
-
-        Current configuration : 2048 bytes
-        !
-        version 17.3
-        service timestamps debug datetime msec
-        service timestamps log datetime msec
-        hostname TEST-SWITCH
-        !
-        no ip domain-lookup
-        ip domain name example.local
-        username admin privilege 15 secret 9 $9$mock$hash
-        !
-        interface GigabitEthernet1/0/1
-         description Uplink-to-Core
-         switchport mode trunk
-         spanning-tree portfast trunk
-        !
-        interface GigabitEthernet1/0/2
-         description User-Access-Port
-         switchport mode access
-         switchport access vlan 20
-         spanning-tree portfast
-        !
-        interface Vlan1
-         ip address 192.0.2.10 255.255.255.0
-        !
-        ip default-gateway 192.0.2.1
-        line vty 0 4
-         login local
-         transport input ssh
-        end
+        Interface               Admin Link Proto    Local                 Remote
+        ge-0/0/0                up    up
+        ge-0/0/1                up    down
+        irb.10                  up    up   inet     10.0.10.2/24
         """
     ),
-    "show ip interface brief": dedent(
+    "show interfaces descriptions": dedent(
         """\
-        Interface              IP-Address      OK? Method Status                Protocol
-        GigabitEthernet1/0/1   unassigned      YES unset  up                    up
-        GigabitEthernet1/0/2   unassigned      YES unset  up                    up
-        GigabitEthernet1/0/3   unassigned      YES unset  administratively down down
-        Vlan1                  192.0.2.10      YES manual up                    up
+        Interface       Admin Link Description
+        ge-0/0/0        up    up   Uplink to core
+        ge-0/0/1        up    down User access
         """
     ),
-    "show processes cpu": dedent(
+    "show interfaces descriptions | no-more": dedent(
         """\
-        CPU utilization for five seconds: 4%/0%; one minute: 3%; five minutes: 2%
-         PID Runtime(ms)   Invoked      uSecs   5Sec   1Min   5Min TTY Process
-           1           0         1          0  0.00%  0.00%  0.00%   0 Load Meter
-          98       45231     82431        548  1.12%  0.76%  0.51%   0 IOSD ipc task
+        Interface       Admin Link Description
+        ge-0/0/0        up    up   Uplink to core
+        ge-0/0/1        up    down User access
         """
     ),
-    "show memory statistics": dedent(
+    "show lldp neighbors": dedent(
         """\
-        Head      Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-        Processor  1934210048   812345678  1121864370  1054321987  1048576000
-              I/O   268435456    87654321   180781135   175000000   170000000
+        Local Interface    Parent Interface    Chassis Id          Port info           System Name
+        ge-0/0/0          -                   00:11:22:33:44:55  xe-0/0/0           core-sw
+        """
+    ),
+    "show lldp neighbors | no-more": dedent(
+        """\
+        Local Interface    Parent Interface    Chassis Id          Port info           System Name
+        ge-0/0/0          -                   00:11:22:33:44:55  xe-0/0/0           core-sw
+        """
+    ),
+    "show system processes extensive": dedent(
+        """\
+        CPU utilization: 18
+        Memory utilization: 43
+        """
+    ),
+    "show system processes extensive | no-more": dedent(
+        """\
+        CPU utilization: 18
+        Memory utilization: 43
         """
     ),
 }

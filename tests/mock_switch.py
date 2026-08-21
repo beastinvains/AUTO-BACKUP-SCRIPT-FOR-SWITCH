@@ -9,7 +9,10 @@ from typing import Optional
 
 import paramiko
 
-from mock_data import COMMAND_OUTPUTS
+try:
+    from .mock_data import COMMAND_OUTPUTS
+except ImportError:  # pragma: no cover - script execution fallback
+    from mock_data import COMMAND_OUTPUTS
 
 HOST = "127.0.0.1"
 PORT = 2222
@@ -62,11 +65,23 @@ class SwitchServer(paramiko.ServerInterface):
         return True
 
 
+def _normalize_command(command: str) -> str:
+    """Canonicalize commands so the mock remains stable across CLI variants."""
+    normalized = command.strip().lower()
+    normalized = normalized.replace("\r", "")
+    normalized = normalized.replace("| no-more", "")
+    normalized = normalized.strip()
+    return normalized
+
+
 def command_response(command: str) -> str:
     """Return a canned response for a command, or the CLI error message."""
     normalized = command.strip()
     if normalized in {"terminal width 511", "terminal length 0"}:
         return f"{normalized}\n"
+    canonical = _normalize_command(normalized)
+    if canonical in COMMAND_OUTPUTS:
+        return f"{canonical}\n{COMMAND_OUTPUTS[canonical]}"
     if normalized in COMMAND_OUTPUTS:
         return f"{normalized}\n{COMMAND_OUTPUTS[normalized]}"
     return f"{normalized}\n% Invalid command\n"

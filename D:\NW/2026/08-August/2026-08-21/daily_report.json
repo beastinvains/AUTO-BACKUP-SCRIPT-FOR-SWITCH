@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "report_date": "2026-08-21",
+  "generated_at": "2026-08-21T10:57:28",
+  "statistics": {
+    "total_devices": 1,
+    "successful": 0,
+    "failed": 1
+  },
+  "devices": [
+    {
+      "hostname": "TEST-SWITCH",
+      "ip": "127.0.0.1",
+      "vendor": "cisco",
+      "status": "failed",
+      "commands": [],
+      "metadata": {},
+      "error": "Missing credentials for profile 'hq'"
+    }
+  ],
+  "metadata": {}
+}

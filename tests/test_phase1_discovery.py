@@ -17,6 +17,7 @@ from inventory.repository import InventoryRepository
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from tests.fixtures.juniper import SHOW_DESCRIPTIONS, SHOW_HEALTH, SHOW_INTERFACES, SHOW_LLDP, SHOW_VERSION
+from tests.mock_switch import command_response
 
 
 class FakeConnection:
@@ -67,6 +68,13 @@ class JuniperParserTests(unittest.TestCase):
         self.assertEqual(len(result.interfaces), 3)
         self.assertEqual(len(result.neighbors), 1)
         self.assertEqual(len(connection.commands), 5)
+
+    def test_mock_switch_supports_phase1_juniper_commands(self):
+        self.assertIn("Hostname: lab-ex4300", command_response("show version | no-more"))
+        self.assertIn("ge-0/0/0", command_response("show interfaces terse | no-more"))
+        self.assertIn("Uplink to core", command_response("show interfaces descriptions | no-more"))
+        self.assertIn("core-sw", command_response("show lldp neighbors | no-more"))
+        self.assertIn("CPU utilization: 18", command_response("show system processes extensive | no-more"))
 
 
 class SuccessfulAdapter(BaseDeviceAdapter):
