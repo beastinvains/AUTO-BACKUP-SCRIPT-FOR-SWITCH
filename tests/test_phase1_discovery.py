@@ -75,6 +75,9 @@ class JuniperParserTests(unittest.TestCase):
         self.assertIn("Uplink to core", command_response("show interfaces descriptions | no-more"))
         self.assertIn("core-sw", command_response("show lldp neighbors | no-more"))
         self.assertIn("CPU utilization: 18", command_response("show system processes extensive | no-more"))
+        self.assertIn("Screen width set to", command_response("set cli screen-width 511"))
+        self.assertIn("Disabling complete-on-space", command_response("set cli complete-on-space off"))
+        self.assertIn("Screen length set to", command_response("set cli screen-length 0"))
 
 
 class SuccessfulAdapter(BaseDeviceAdapter):

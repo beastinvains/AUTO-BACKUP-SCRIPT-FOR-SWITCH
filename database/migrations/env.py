@@ -10,8 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from database.models import Base
 
 config = context.config
-if os.environ.get("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", "sqlite:///./phase1.db"))
 target_metadata = Base.metadata
 
 

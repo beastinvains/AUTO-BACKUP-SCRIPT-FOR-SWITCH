@@ -20,6 +20,9 @@ COMMANDS = {
     "descriptions": "show interfaces descriptions | no-more",
     "neighbors": "show lldp neighbors | no-more",
     "health": "show system processes extensive | no-more",
+    # This is deliberately separate from operational commands.  It is the only
+    # command whose output becomes a versioned configuration artifact.
+    "configuration": "show configuration | display set | no-more",
 }
 _ALLOWED_COMMANDS = frozenset(COMMANDS.values())
 
@@ -40,6 +43,7 @@ def parse_device_info(output: str, target: DiscoveryTarget) -> Device:
         name=hostname, type=target.type if target.type != DeviceType.OTHER else DeviceType.SWITCH,
         vendor="juniper" if recognized else None, model=model, platform="junos" if recognized else None,
         os_version=version, serial_number=serial, management_ip=target.management_ip,
+        management_port=target.port,
         credentials_reference_id=target.credentials_reference_id, capabilities=[
             "device_info", "health", "interfaces", "lldp_neighbors"
         ] if recognized else [], status=DeviceStatus.ONLINE if recognized else DeviceStatus.UNKNOWN,
@@ -166,3 +170,12 @@ class JuniperAdapter(BaseDeviceAdapter):
     def get_neighbors(self, target: DiscoveryTarget):
         with self._connection(target) as connection:
             return parse_neighbors(self._run(connection, "neighbors"))
+
+    def get_configuration(self, target: DiscoveryTarget) -> str:
+        """Collect a read-only, canonical Junos configuration snapshot."""
+        with self._connection(target) as connection:
+            return self._run(connection, "configuration")
+
+    def backup_configuration(self, target: DiscoveryTarget) -> str:
+        """Compatibility name for the same single configuration operation."""
+        return self.get_configuration(target)

@@ -13,7 +13,12 @@ class InventoryRepository:
 
     def upsert(self, result: DiscoveryResult) -> Device:
         device = result.device
-        record = self.session.scalar(select(DeviceRecord).where(DeviceRecord.management_ip == str(device.management_ip)))
+        # Match on the full management endpoint. Address alone would collapse several devices
+        # reached on different ports of the same host into a single inventory row.
+        record = self.session.scalar(select(DeviceRecord).where(
+            DeviceRecord.management_ip == str(device.management_ip),
+            DeviceRecord.management_port == device.management_port,
+        ))
         values = device.model_dump(mode="python")
         values.pop("id")
         values["management_ip"] = str(values["management_ip"])
@@ -48,6 +53,7 @@ class InventoryRepository:
             "id": record.id, "name": record.name, "type": record.type, "vendor": record.vendor,
             "model": record.model, "platform": record.platform, "os_version": record.os_version,
             "serial_number": record.serial_number, "management_ip": record.management_ip,
+            "management_port": record.management_port,
             "credentials_reference_id": record.credentials_reference_id, "capabilities": record.capabilities,
             "status": record.status, "site": record.site, "discovery_state": record.discovery_state,
             "last_seen_at": record.last_seen_at, "evidence": record.evidence, "confidence": record.confidence,

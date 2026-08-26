@@ -3,6 +3,14 @@
 This is a lightweight Paramiko SSH server for exercising the backup workflow
 without a real network device. It is not a Cisco IOS emulator.
 
+For several devices at once — which is what the topology map needs — use the mock
+lab instead: `python tests/mock_lab.py` serves the six-device estate defined in
+`lab_estate.py`, one SSH port per device, and reuses the plumbing in
+`mock_switch.py` rather than adding a second SSH implementation. The full
+walkthrough, including how to run it on another machine on your LAN, is
+`docs/mock-lab-guide.md`. `test_lab_estate.py` checks that estate through the real
+parsers and the real graph builder, with no sockets.
+
 ## Run it
 
 Paramiko is installed as a dependency of Netmiko. If it is not already

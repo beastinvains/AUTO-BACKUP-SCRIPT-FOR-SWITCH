@@ -75,6 +75,7 @@ class Device(BaseModel):
     os_version: str | None = None
     serial_number: str | None = None
     management_ip: IPv4Address | IPv6Address
+    management_port: int = Field(default=22, ge=1, le=65535)
     credentials_reference_id: str = Field(min_length=1, max_length=255)
     capabilities: list[str] = Field(default_factory=list)
     status: DeviceStatus = DeviceStatus.UNKNOWN
