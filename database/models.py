@@ -73,6 +73,10 @@ class HealthRecord(Base):
     memory_percent: Mapped[float | None] = mapped_column(Float)
     uptime: Mapped[str | None] = mapped_column(String(255))
     hardware_status: Mapped[str] = mapped_column(String(50))
+    temperature_c: Mapped[float | None] = mapped_column(Float)
+    fan_speed_rpm: Mapped[int | None] = mapped_column(Integer)
+    power_supplies: Mapped[list] = mapped_column(JSON, default=list)
+    cluster_members: Mapped[list] = mapped_column(JSON, default=list)
     device: Mapped[DeviceRecord] = relationship(back_populates="health")
 
 

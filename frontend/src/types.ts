@@ -74,6 +74,10 @@ export type Health = {
   memory_percent: number | null;
   uptime: string | null;
   hardware_status: string;
+  temperature_c: number | null;
+  fan_speed_rpm: number | null;
+  power_supplies: { name: string; status: string }[];
+  cluster_members: string[];
 };
 
 export type Configuration = {

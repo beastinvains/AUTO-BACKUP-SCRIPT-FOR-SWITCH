@@ -97,8 +97,17 @@ def parse_health(output: str, uptime: str | None = None) -> Health:
     cpu = _first(r"CPU utilization:\s*(\d+(?:\.\d+)?)", output)
     memory = _first(r"Memory utilization:\s*(\d+(?:\.\d+)?)", output)
     hardware = "ok" if "error" not in output.lower() else "warning"
+    temperature = _first(r"(?:temperature|temp)[^\d]*(\d+(?:\.\d+)?)\s*(?:°?\s*C|Celsius)?", output)
+    fan = _first(r"(?:fan|fan speed)[^\d]*(\d+)\s*RPM", output)
+    power_supplies = [
+        {"name": match.group(1), "status": match.group(2).capitalize()}
+        for match in re.finditer(r"(?:power\s+)?supply\s*([0-9]+)\s*[:\-]\s*(OK|Failed|Absent|Warning)", output, re.I)
+    ]
+    cluster = _first(r"Cluster members?:\s*(.+)$", output)
     return Health(cpu_percent=float(cpu) if cpu else None, memory_percent=float(memory) if memory else None,
-                  uptime=uptime, hardware_status=hardware)
+                  uptime=uptime, hardware_status=hardware, temperature_c=float(temperature) if temperature else None,
+                  fan_speed_rpm=int(fan) if fan else None, power_supplies=power_supplies,
+                  cluster_members=[item.strip() for item in cluster.split(",")] if cluster else [])
 
 
 class JuniperAdapter(BaseDeviceAdapter):

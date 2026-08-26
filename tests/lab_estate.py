@@ -86,6 +86,10 @@ class LabPersona:
     interface_descriptions: str
     lldp_neighbors: str
     config_lines: list[str]
+    temperature_c: float = 38.0
+    fan_speed_rpm: int = 4200
+    power_supplies: tuple[str, str] = ("OK", "OK")
+    cluster_members: tuple[str, ...] = ()
     drift_steps: list[ConfigChange] = field(default_factory=list)
     drift_applied: int = 0
     responses: dict[str, str] = field(default_factory=dict, init=False, repr=False)
@@ -106,6 +110,11 @@ class LabPersona:
             "show system processes extensive": dedent(f"""\
                 CPU utilization: {self.cpu_percent}
                 Memory utilization: {self.memory_percent}
+                Temperature: {self.temperature_c} C
+                Fan speed: {self.fan_speed_rpm} RPM
+                Power Supply 0: {self.power_supplies[0]}
+                Power Supply 1: {self.power_supplies[1]}
+                Cluster members: {', '.join(self.cluster_members) if self.cluster_members else self.hostname}
                 """),
         })
         self._publish_configuration()
@@ -255,6 +264,9 @@ def build_estate() -> list[LabPersona]:
             uptime="87 days, 19 hours, 2 minutes",
             cpu_percent=22,
             memory_percent=51,
+            temperature_c=54,
+            fan_speed_rpm=3600,
+            cluster_members=("dist-sw01.dc-a.lab-0", "dist-sw01.dc-a.lab-1"),
             interfaces_terse=dedent("""\
                 Interface               Admin Link Proto    Local                 Remote
                 xe-0/0/48               up    up

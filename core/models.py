@@ -62,6 +62,10 @@ class Health(BaseModel):
     memory_percent: float | None = Field(default=None, ge=0, le=100)
     uptime: str | None = None
     hardware_status: str = "unknown"
+    temperature_c: float | None = Field(default=None, ge=-50, le=150)
+    fan_speed_rpm: int | None = Field(default=None, ge=0)
+    power_supplies: list[dict[str, str]] = Field(default_factory=list)
+    cluster_members: list[str] = Field(default_factory=list)
 
 
 class Device(BaseModel):
