@@ -34,6 +34,7 @@ import type {
   TopologyEdge,
   TopologyFilters,
   TopologyNode,
+  AppSettings,
 } from "./types";
 
 const STORAGE_KEY = "ivp.identity";
@@ -130,6 +131,8 @@ async function request<T>(
 }
 
 export const api = {
+  settings: () => request<AppSettings>("/api/settings"),
+  updateSettings: (input: AppSettings) => request<AppSettings>("/api/settings", { method: "PUT", body: input }),
   // ---- Dashboard -----------------------------------------------------------
   dashboard: () => request<Dashboard>("/api/dashboard"),
 

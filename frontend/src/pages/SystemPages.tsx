@@ -3,6 +3,9 @@
  */
 
 import { useState } from "react";
+import { api, getIdentity } from "../api";
+import { useAsync } from "../hooks";
+import type { AppSettings } from "../types";
 import { SettingsIcon, UsersIcon, IntegrationsIcon, NotificationsIcon, AuditTrailIcon, CheckCircleIcon, PlusIcon } from "../components/icons";
 import { StatCard, NetraBadge, Modal } from "../components/ui";
 
@@ -23,13 +26,29 @@ export function SystemPage({
     case "audit":
       return <AuditTrailSection navigate={navigate} />;
     default:
-      return <SettingsSection />;
+      return <SettingsSection navigate={navigate} />;
   }
 }
 
-function SettingsSection() {
+function SettingsSection({ navigate }: { navigate: (page: string, param?: string) => void }) {
+  const loaded = useAsync(() => api.settings(), []);
+  const [form, setForm] = useState<AppSettings | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const values = form ?? loaded.data;
+  const isAdmin = getIdentity().role === "admin";
+  const save = async () => {
+    if (!values || !isAdmin) return;
+    try {
+      setError(null); setMessage(null);
+      const saved = await api.updateSettings(values);
+      setForm(saved); setMessage("Settings saved. New scheduled runs will use these values.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to save settings"); }
+  };
   return (
     <div className="page-content">
+      {error && <p className="error-banner">{error}</p>}
+      {message && <p className="notice">{message}</p>}
       <div className="netra-panel">
         <div className="netra-panel-header">
           <h2 className="panel-title">System & Security Settings</h2>
@@ -37,23 +56,27 @@ function SettingsSection() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "680px" }}>
           <div className="form-group">
-            <label>Backup Artifact Retention Policy (Days)</label>
-            <input className="form-input" defaultValue="90" type="number" />
+            <label>Default Backup Time (UTC)</label>
+            <input className="form-input" value={values?.backup_time ?? ""} type="time" onChange={(e) => values && setForm({ ...values, backup_time: e.target.value })} disabled={!isAdmin} />
+            <small>For named device schedules, use the Schedules page.</small>
           </div>
           <div className="form-group">
-            <label>Stale Configuration Alert Threshold (Days)</label>
-            <input className="form-input" defaultValue="7" type="number" />
+            <label>Backup Artifact Retention (Days)</label>
+            <input className="form-input" value={values?.retention_days ?? ""} type="number" min="1" max="3650" onChange={(e) => values && setForm({ ...values, retention_days: Number(e.target.value) })} disabled={!isAdmin} />
           </div>
           <div className="form-group">
-            <label>Local Encrypted Vault Path</label>
-            <input className="form-input" defaultValue="/var/lib/netra/backups/encrypted_vault" />
+            <label>Backup Storage Directory</label>
+            <input className="form-input" value={values?.backup_directory ?? ""} onChange={(e) => values && setForm({ ...values, backup_directory: e.target.value })} disabled={!isAdmin} />
+            <small>Configuration backup files are written here by the backend.</small>
           </div>
           <div className="form-group">
-            <label>Session Inactivity Timeout (Minutes)</label>
-            <input className="form-input" defaultValue="30" type="number" />
+            <label>Backup Worker Threads</label>
+            <input className="form-input" value={values?.max_workers ?? ""} type="number" min="1" max="64" onChange={(e) => values && setForm({ ...values, max_workers: Number(e.target.value) })} disabled={!isAdmin} />
           </div>
+          <div className="notice">Named schedules are managed separately and can target all devices or a selected device/cluster.</div>
           <div style={{ marginTop: "10px" }}>
-            <button className="btn btn-primary">Save Settings</button>
+            <button className="btn btn-primary" onClick={() => void save()} disabled={!isAdmin || !values}>{isAdmin ? "Save Settings" : "Admin role required"}</button>
+            <button className="btn btn-ghost" style={{ marginLeft: "8px" }} onClick={() => navigate("schedules")}>Manage Backup Schedules</button>
           </div>
         </div>
       </div>

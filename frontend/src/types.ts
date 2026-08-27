@@ -238,6 +238,13 @@ export type ScheduleInput = {
   enabled: boolean;
 };
 
+export type AppSettings = {
+  backup_time: string;
+  backup_directory: string;
+  max_workers: number;
+  retention_days: number;
+};
+
 export type LogEvent = {
   id: string;
   timestamp: string | null;

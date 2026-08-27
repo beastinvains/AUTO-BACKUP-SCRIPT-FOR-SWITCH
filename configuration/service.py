@@ -60,6 +60,20 @@ class ConfigurationService:
             ConfigurationVersionRecord.device_id == device_id
         ).order_by(ConfigurationVersionRecord.collected_at.desc()))
         if previous and previous.sha256 == digest:
+            # A storage-directory change does not create a new version when the
+            # configuration is unchanged. Re-materialize the existing version in
+            # the newly selected store so changing the setting does not leave the
+            # destination empty or the database pointing at a missing artifact.
+            try:
+                self.storage.get(previous.storage_uri)
+            except FileNotFoundError:
+                previous.storage_uri = self.storage.put_configuration(
+                    device_name=device_name,
+                    version_id=previous.id,
+                    content=normalized.encode("utf-8"),
+                    collected_at=previous.collected_at,
+                )
+                session.commit()
             return StoreResult(previous, changed=False, created=False)
         now = datetime.now(timezone.utc)
         version = ConfigurationVersionRecord(

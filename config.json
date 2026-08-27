@@ -1,6 +1,6 @@
 {
   "backup_time": "14:58",
-  "backup_directory": "D:\\NW",
+  "backup_directory": "/home/punit/code/datai",
   "max_workers": 4,
   "retention_days": 30
 }

@@ -20,7 +20,7 @@ from inventory.repository import InventoryRepository
 from inventory.service import DeviceConflict, DeviceInput, InventoryService
 from backup_service import BackupService
 from configuration.service import ConfigurationService, configuration_diff
-from config import load_config
+from config import SETTINGS_FILE, load_config, load_settings
 from schedule_service import ScheduleService, ScheduleSpec
 from scheduler import ScheduleRunner
 from storage.local import LocalArtifactStorage
@@ -86,6 +86,13 @@ class BackupRequest(BaseModel):
     device_ids: list[str] = Field(default_factory=list)
 
 
+class SettingsInput(BaseModel):
+    backup_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d")
+    backup_directory: str = Field(min_length=1, max_length=1024)
+    max_workers: int = Field(ge=1, le=64)
+    retention_days: int = Field(ge=1, le=3650)
+
+
 def topology_filters(site: str | None = None, vendor: str | None = None,
                      device_type: str | None = None, status: str | None = None) -> dict:
     """Query filters shared by every topology route (Phase 3 section 12)."""
@@ -108,6 +115,32 @@ def get_job(job_id: UUID):
 @app.get("/api/devices")
 def list_devices(session: Session = Depends(get_session)):
     return [InventoryRepository._device(item) for item in InventoryRepository(session).list()]
+
+
+@app.get("/api/settings")
+def get_settings():
+    config = load_config()
+    stored = load_settings()
+    return {"backup_time": stored.get("backup_time", config.backup_time),
+            "backup_directory": stored.get("backup_directory", str(config.backup_root)),
+            "max_workers": stored.get("max_workers", config.max_workers),
+            "retention_days": stored.get("retention_days", config.retention_days)}
+
+
+@app.put("/api/settings")
+def update_settings(payload: SettingsInput, _actor: str = Depends(require_admin)):
+    settings = load_settings()
+    settings.update(payload.model_dump())
+    temporary = SETTINGS_FILE.with_suffix(".json.tmp")
+    with open(temporary, "w", encoding="utf-8") as handle:
+        import json
+        json.dump(settings, handle, indent=2)
+        handle.write("\n")
+    temporary.replace(SETTINGS_FILE)
+    # BackupService is created at module import time; refresh its artifact store so a
+    # directory changed in Settings is used by the next backup in this process.
+    backup_service.configurations.storage = LocalArtifactStorage(load_config().backup_root)
+    return get_settings()
 
 
 @app.get("/api/devices/{device_id}")

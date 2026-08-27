@@ -31,10 +31,14 @@ class InventoryRepository:
                     setattr(record, key, value)
             record.interfaces.clear()
             record.neighbors.clear()
-            record.health = None
         record.interfaces = [InterfaceRecord(**item.model_dump()) for item in result.interfaces]
         record.neighbors = [NeighborRecord(**item.model_dump()) for item in result.neighbors]
-        record.health = HealthRecord(**result.health.model_dump())
+        health_values = result.health.model_dump()
+        if record.health is None:
+            record.health = HealthRecord(**health_values)
+        else:
+            for key, value in health_values.items():
+                setattr(record.health, key, value)
         self.session.commit()
         self.session.refresh(record)
         return self._device(record)

@@ -10,7 +10,7 @@ from adapters.base import AdapterError, BaseDeviceAdapter
 from adapters.juniper.adapter import JuniperAdapter, parse_device_info, parse_health, parse_interfaces, parse_neighbors
 from audit.logging import log_discovery
 from core.models import DiscoveryResult, DiscoveryTarget
-from database.models import Base
+from database.models import Base, HealthRecord
 from database.session import SessionLocal
 from discovery.jobs import DiscoveryService, JobStatus
 from inventory.repository import InventoryRepository
@@ -114,6 +114,19 @@ class DiscoveryAndPersistenceTests(unittest.TestCase):
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0].vendor, "juniper")
             self.assertEqual(len(records[0].interfaces), 3)
+
+    def test_repeated_discovery_updates_existing_health_row(self):
+        connection = FakeConnection()
+        adapter = JuniperAdapter(
+            credentials_provider=lambda _: {"username": "user", "password": "not-logged"},
+            connection_factory=lambda **_: connection,
+        )
+        target = DiscoveryTarget(name="good", management_ip="192.0.2.10", credentials_reference_id="lab")
+        service = DiscoveryService(adapter, self.sessions)
+        service.run([target])
+        service.run([target])
+        with self.sessions() as session:
+            self.assertEqual(session.query(HealthRecord).count(), 1)
 
     def test_secret_fields_are_not_logged(self):
         stream = io.StringIO()
