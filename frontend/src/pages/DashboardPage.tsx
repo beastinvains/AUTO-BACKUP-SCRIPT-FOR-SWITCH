@@ -40,49 +40,6 @@ const TREND_POINTS_7D = [
   { date: "May 19", value: 82 },
 ];
 
-const RECENT_ALERTS_MOCK = [
-  {
-    id: "alt-1",
-    time: "May 19, 10:24 AM",
-    device: "Core-Router-1",
-    type: "Policy Violation",
-    severity: "critical" as const,
-    message: "Telnet service is enabled",
-  },
-  {
-    id: "alt-2",
-    time: "May 19, 09:18 AM",
-    device: "Dist-Switch-2",
-    type: "Configuration Change",
-    severity: "warning" as const,
-    message: "Change in SSH configuration",
-  },
-  {
-    id: "alt-3",
-    time: "May 19, 08:12 AM",
-    device: "Firewall-1",
-    type: "Interface Down",
-    severity: "warning" as const,
-    message: "Interface ge-0/0/2 is down",
-  },
-  {
-    id: "alt-4",
-    time: "May 19, 07:45 AM",
-    device: "Core-Switch-1",
-    type: "Device Up",
-    severity: "info" as const,
-    message: "Device is back online",
-  },
-  {
-    id: "alt-5",
-    time: "May 19, 07:30 AM",
-    device: "Dist-Router-1",
-    type: "High CPU Utilization",
-    severity: "warning" as const,
-    message: "CPU usage is above 80%",
-  },
-];
-
 const RECENT_ACTIVITY_MOCK = [
   { id: "act-1", text: "Backup completed for Core-Router-1", time: "10:24 AM", tone: "green", icon: "check" },
   { id: "act-2", text: "Policy violation detected on Dist-Switch-2", time: "09:58 AM", tone: "amber", icon: "alert" },
@@ -96,34 +53,40 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
 
   const state = useAsync(async () => {
     try {
-      const [dashboard, devices, logs] = await Promise.all([
+      const [dashboard, devices, logs, alerts] = await Promise.all([
         api.dashboard().catch(() => null),
         api.devices().catch(() => []),
         api.logs({ limit: 50 }).catch(() => []),
+        api.alerts({ status: "new", limit: 5 }).catch(() => []),
       ]);
-      return { dashboard, devices, logs };
+      return { dashboard, devices, logs, alerts };
     } catch {
-      return { dashboard: null, devices: [], logs: [] };
+      return { dashboard: null, devices: [], logs: [], alerts: [] };
     }
   }, []);
 
   const liveDevices = state.data?.devices ?? [];
   const db = state.data?.dashboard;
+  const liveAlerts = state.data?.alerts ?? [];
 
   const totalDevices = db?.infrastructure.total_devices || (liveDevices.length > 0 ? liveDevices.length : 43);
   const onlineDevices = db?.infrastructure.online || 38;
   const offlineDevices = db?.infrastructure.offline || (totalDevices - onlineDevices > 0 ? totalDevices - onlineDevices : 5);
 
+  const posture = db?.security_posture;
+  const complianceScore = posture?.compliance?.score ?? "N/A";
+  const openAlertsCount = posture?.alerts?.new ?? 0;
+  
   const alertsSeveritySegments = [
-    { label: "Critical", value: 3, color: "#ef4444" },
-    { label: "Warning", value: 9, color: "#f59e0b" },
-    { label: "Info", value: 0, color: "#3b82f6" },
+    { label: "Critical", value: posture?.alerts?.by_severity?.critical ?? 0, color: "#ef4444" },
+    { label: "Warning", value: (posture?.alerts?.by_severity?.high ?? 0) + (posture?.alerts?.by_severity?.medium ?? 0), color: "#f59e0b" },
+    { label: "Info", value: posture?.alerts?.by_severity?.info ?? 0, color: "#3b82f6" },
   ];
 
   const deviceStatusSegments = [
-    { label: "Online", value: onlineDevices, percentage: 88, color: "#10b981" },
-    { label: "Offline", value: offlineDevices, percentage: 12, color: "#ef4444" },
-    { label: "Unknown", value: 0, percentage: 0, color: "#64748b" },
+    { label: "Online", value: onlineDevices, percentage: Math.round((onlineDevices / totalDevices) * 100) || 0, color: "#10b981" },
+    { label: "Offline", value: offlineDevices, percentage: Math.round((offlineDevices / totalDevices) * 100) || 0, color: "#ef4444" },
+    { label: "Unknown", value: totalDevices - onlineDevices - offlineDevices, percentage: Math.round(((totalDevices - onlineDevices - offlineDevices) / totalDevices) * 100) || 0, color: "#64748b" },
   ];
 
   return (
@@ -145,29 +108,29 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
         />
         <StatCard
           label="Compliance Score"
-          value="78%"
+          value={complianceScore !== "N/A" ? `${complianceScore}%` : "N/A"}
           icon={<ComplianceIcon size={20} />}
           iconTone="purple"
-          indicators={[{ text: "↑ 8% this week", tone: "green" }]}
+          indicators={[]}
           onClick={() => navigate("compliance")}
         />
         <StatCard
           label="Open Alerts"
-          value="12"
+          value={openAlertsCount.toString()}
           icon={<AlertTriangleIcon size={20} />}
           iconTone="amber"
           indicators={[
-            { text: "● Critical 3", tone: "red" },
-            { text: "● Warning 9", tone: "amber" },
+            { text: `● Critical ${posture?.alerts?.by_severity?.critical ?? 0}`, tone: "red" },
+            { text: `● Warning ${(posture?.alerts?.by_severity?.high ?? 0) + (posture?.alerts?.by_severity?.medium ?? 0)}`, tone: "amber" },
           ]}
           onClick={() => navigate("alerts")}
         />
         <StatCard
           label="Last 24h"
-          value="128"
+          value={db?.backup.total_jobs?.toString() || "0"}
           icon={<CloudIcon size={20} />}
           iconTone="blue"
-          indicators={[{ text: "Last 24h", tone: "blue" }]}
+          indicators={[{ text: "Backups", tone: "blue" }]}
           onClick={() => navigate("backups")}
         />
       </div>
@@ -203,7 +166,7 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, paddingTop: "8px" }}>
                 <NetraDonut
                   segments={alertsSeveritySegments}
-                  centerValue={12}
+                  centerValue={openAlertsCount}
                   centerLabel="Total"
                   size={135}
                   strokeWidth={14}
@@ -234,23 +197,33 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
                   </tr>
                 </thead>
                 <tbody>
-                  {RECENT_ALERTS_MOCK.map((alt) => (
+                  {liveAlerts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>
+                        No new alerts
+                      </td>
+                    </tr>
+                  ) : liveAlerts.map((alt) => (
                     <tr key={alt.id}>
-                      <td className="table-time">{alt.time}</td>
+                      <td className="table-time">{new Date(alt.created_at).toLocaleString()}</td>
                       <td>
-                        <button
-                          className="table-device-link"
-                          onClick={() => navigate("devices", alt.device)}
-                        >
-                          {alt.device}
-                        </button>
+                        {alt.device_id ? (
+                           <button
+                             className="table-device-link"
+                             onClick={() => navigate("devices", alt.device_id!)}
+                           >
+                             {alt.device_id.split("-")[0]}...
+                           </button>
+                        ) : (
+                           <span style={{ color: "var(--ink-3)" }}>System</span>
+                        )}
                       </td>
-                      <td>{alt.type}</td>
+                      <td>{alt.category}</td>
                       <td>
-                        <NetraBadge type={alt.severity} />
+                        <NetraBadge type={alt.severity === "critical" ? "critical" : alt.severity === "high" || alt.severity === "medium" ? "warning" : "info"} />
                       </td>
                       <td>
-                        <span style={{ color: "var(--ink-2)" }}>{alt.message}</span>
+                        <span style={{ color: "var(--ink-2)" }}>{alt.title}</span>
                       </td>
                       <td>
                         <button

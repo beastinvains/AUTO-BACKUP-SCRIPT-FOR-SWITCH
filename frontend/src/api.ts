@@ -195,4 +195,41 @@ export const api = {
   // ---- Logs ----------------------------------------------------------------
   logs: (filters?: LogFilters) => request<LogEvent[]>("/api/logs", { params: filters }),
   logOptions: () => request<LogOptions>("/api/logs/options"),
+
+  // ---- Phase 4: Monitoring -------------------------------------------------
+  monitoringOverview: () => request<import("./types").MonitoringOverview>("/api/monitoring"),
+  monitoringDevice: (deviceId: string) => request<import("./types").MonitoringDevice>(`/api/monitoring/devices/${deviceId}`),
+  monitoringHistory: (deviceId: string, params?: { start?: string; end?: string; limit?: number }) => request<import("./types").TelemetryRecord[]>(`/api/monitoring/history/${deviceId}`, { params }),
+  runMonitoring: (kind: "telemetry" | "service" | "all", deviceIds?: string[]) => request<{ status: string; kind: string }>("/api/monitoring/run", { method: "POST", params: { kind, device_ids: deviceIds } }),
+
+  // ---- Phase 4: Policies ---------------------------------------------------
+  policies: (params?: { category?: string; severity?: string; enabled?: boolean }) => request<import("./types").Policy[]>("/api/policies", { params }),
+  policy: (id: string) => request<import("./types").Policy>(`/api/policies/${id}`),
+  createPolicy: (input: import("./types").PolicyInput) => request<import("./types").Policy>("/api/policies", { method: "POST", body: input }),
+  updatePolicy: (id: string, input: import("./types").PolicyInput) => request<import("./types").Policy>(`/api/policies/${id}`, { method: "PUT", body: input }),
+  deletePolicy: (id: string) => request<void>(`/api/policies/${id}`, { method: "DELETE" }),
+  evaluatePolicy: (id: string, deviceIds?: string[]) => request<{ policy_id: string; status: string }>(`/api/policies/${id}/evaluate`, { method: "POST", params: { device_ids: deviceIds } }),
+
+  // ---- Phase 4: Findings ---------------------------------------------------
+  findings: (params?: { severity?: string; status?: string; device_id?: string; policy_id?: string; category?: string; start?: string; end?: string; limit?: number }) => request<import("./types").Finding[]>("/api/findings", { params }),
+  finding: (id: string) => request<import("./types").Finding>(`/api/findings/${id}`),
+  acknowledgeFinding: (id: string) => request<import("./types").Finding>(`/api/findings/${id}/acknowledge`, { method: "POST" }),
+  resolveFinding: (id: string, note?: string) => request<import("./types").Finding>(`/api/findings/${id}/resolve`, { method: "POST", params: { note } }),
+  suppressFinding: (id: string) => request<import("./types").Finding>(`/api/findings/${id}/suppress`, { method: "POST" }),
+
+  // ---- Phase 4: Alerts -----------------------------------------------------
+  alerts: (params?: { severity?: string; status?: string; device_id?: string; category?: string; limit?: number }) => request<import("./types").Alert[]>("/api/alerts", { params }),
+  alert: (id: string) => request<import("./types").Alert>(`/api/alerts/${id}`),
+  acknowledgeAlert: (id: string) => request<import("./types").Alert>(`/api/alerts/${id}/acknowledge`, { method: "POST" }),
+  resolveAlert: (id: string) => request<import("./types").Alert>(`/api/alerts/${id}/resolve`, { method: "POST" }),
+
+  // ---- Phase 4: Evidence ---------------------------------------------------
+  evidence: (deviceId: string, params?: { evidence_type?: string; limit?: number }) => request<import("./types").EvidenceRecord[]>("/api/evidence", { params: { device_id: deviceId, ...params } }),
+  evidenceRecord: (id: string) => request<import("./types").EvidenceRecord>(`/api/evidence/${id}`),
+
+  // ---- Phase 4: Posture & Reports ------------------------------------------
+  securityPosture: () => request<import("./types").SecurityPosture>("/api/security-posture"),
+  generateDeviceReport: (deviceId: string) => request<import("./types").SecurityReport>(`/api/reports/device/${deviceId}`, { method: "POST" }),
+  generateEstateReport: () => request<import("./types").SecurityReport>("/api/reports/estate", { method: "POST" }),
+  report: (id: string) => request<import("./types").SecurityReport>(`/api/reports/${id}`),
 };

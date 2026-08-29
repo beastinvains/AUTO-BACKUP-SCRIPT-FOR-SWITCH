@@ -310,6 +310,7 @@ export type Dashboard = {
     pending_devices: number;
   };
   schedules: { total: number; enabled: number; next_run_at: string | null };
+  security_posture: SecurityPosture | null;
 };
 
 export type SchedulerStatus = { running: boolean; tick_seconds: number; due_now: number };
@@ -322,3 +323,185 @@ export type DiscoveryJob = {
   completed_at: string | null;
   results: { target: string; status: string; device_id: string | null; error: string | null }[];
 };
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Security Monitoring, Policy Engine, Findings, Alerts, Evidence
+// ---------------------------------------------------------------------------
+
+export type TelemetryRecord = {
+  id: string;
+  device_id: string;
+  collection_job_id: string;
+  collected_at: string;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  temperature_c: number | null;
+  fan_speed_rpm: number | null;
+  power_status: string | null;
+  reachability: "online" | "timeout" | "error" | "unknown" | "not_collected";
+  interface_summary: { total?: number; up?: number; down?: number };
+};
+
+export type ServiceObservation = {
+  id: string;
+  device_id: string;
+  observed_at: string;
+  port: number;
+  protocol: string;
+  service_name: string | null;
+  state: string;
+  first_seen_at: string;
+  last_seen_at: string;
+};
+
+export type MonitoringDeviceCoverage = {
+  device_id: string;
+  device_name: string;
+  device_status: string;
+  last_collected_at: string | null;
+  reachability: string;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  temperature_c: number | null;
+  fan_speed_rpm: number | null;
+  power_status: string | null;
+};
+
+export type MonitoringOverview = {
+  total_devices: number;
+  devices_online: number;
+  devices_offline: number;
+  devices_not_collected: number;
+  coverage: MonitoringDeviceCoverage[];
+};
+
+export type MonitoringDevice = {
+  telemetry: TelemetryRecord | null;
+  services: ServiceObservation[];
+};
+
+export type MonitoringJob = {
+  id: string;
+  status: string;
+  kind: string;
+  device_ids: string[];
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  triggered_by: string;
+  success_count: number;
+  error_count: number;
+};
+
+export type Policy = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  vendor_scope: string[];
+  device_type_scope: string[];
+  rule_type: "config_pattern" | "telemetry_threshold" | "service_check" | "interface_check";
+  rule_definition: Record<string, unknown>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string | null;
+  created_by: string;
+};
+
+export type PolicyInput = Omit<Policy, "id" | "created_at" | "updated_at" | "created_by">;
+
+export type PolicyEvaluation = {
+  evaluation_id: string;
+  policy_id: string;
+  policy_name: string;
+  device_id: string;
+  device_name: string;
+  evaluated_at: string;
+  result: "pass" | "fail" | "unknown";
+  details: Record<string, unknown>;
+};
+
+export type Finding = {
+  id: string;
+  device_id: string;
+  policy_id: string | null;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  status: "open" | "acknowledged" | "resolved" | "suppressed";
+  title: string;
+  description: string | null;
+  category: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  occurrence_count: number;
+  evidence_refs: string[];
+  related_config_version_id: string | null;
+  related_telemetry_id: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
+};
+
+export type Alert = {
+  id: string;
+  finding_id: string | null;
+  device_id: string | null;
+  category: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  status: "new" | "acknowledged" | "resolved";
+  title: string;
+  message: string | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  actor: string | null;
+  evidence_ref: string | null;
+};
+
+export type EvidenceRecord = {
+  id: string;
+  device_id: string | null;
+  collection_job_id: string | null;
+  collected_at: string;
+  evidence_type: string;
+  source_adapter: string | null;
+  sha256: string;
+  size_bytes: number;
+  config_version_id: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type SecurityPosture = {
+  generated_at: string;
+  total_devices: number;
+  findings: {
+    open: number;
+    acknowledged: number;
+    by_severity: Record<string, number>;
+  };
+  alerts: {
+    new: number;
+    acknowledged: number;
+    by_severity: Record<string, number>;
+  };
+  compliance: {
+    score: number | null;
+    total_evaluations: number;
+    pass: number;
+    fail: number;
+    unknown: number;
+  };
+};
+
+export type SecurityReport = {
+  id: string;
+  device_id: string | null;
+  generated_at: string;
+  generated_by: string;
+  evidence_refs: string[];
+  compliance_summary: Record<string, unknown>;
+  findings_summary: Record<string, unknown>;
+  telemetry_summary: Record<string, unknown>;
+  service_summary: Record<string, unknown>;
+};
+

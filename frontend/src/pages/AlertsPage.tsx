@@ -1,53 +1,149 @@
-/** Alerts and hardware status derived from discovered devices and health records. */
-
 import { useMemo, useState } from "react";
 import { api } from "../api";
 import { useAsync } from "../hooks";
-import type { Device, Health } from "../types";
-import { AlertTriangleIcon, FanIcon, PowerIcon, TempIcon } from "../components/icons";
-import { HardwareTelemetryCard, Loading, NetraBadge, StatCard } from "../components/ui";
-
-type HealthRow = { device: Device; health: Health };
-type AlertRow = { id: string; device: Device; type: string; severity: "critical" | "warning" | "info"; message: string };
-
-function statusOf(device: Device, health: Health): "online" | "warning" | "critical" {
-  const failedPsu = health.power_supplies.some((item) => item.status.toLowerCase() !== "ok");
-  if (device.status === "offline" || failedPsu || health.hardware_status === "warning") return "critical";
-  if ((health.cpu_percent ?? 0) >= 80 || (health.temperature_c ?? 0) >= 70) return "warning";
-  return "online";
-}
-
-function buildAlerts(rows: HealthRow[]): AlertRow[] {
-  const alerts: AlertRow[] = [];
-  for (const { device, health } of rows) {
-    if (device.discovery_state === "failed") alerts.push({ id: `${device.id}-discovery`, device, type: "Discovery Failure", severity: "critical", message: "Device discovery failed" });
-    if (health.power_supplies.some((item) => item.status.toLowerCase() !== "ok")) alerts.push({ id: `${device.id}-power`, device, type: "Power Supply", severity: "critical", message: health.power_supplies.map((item) => `${item.name}: ${item.status}`).join(", ") });
-    if ((health.fan_speed_rpm ?? 0) === 0) alerts.push({ id: `${device.id}-fan`, device, type: "Fan", severity: "critical", message: "Fan speed is unavailable or stopped" });
-    if ((health.temperature_c ?? 0) >= 70) alerts.push({ id: `${device.id}-temperature`, device, type: "Temperature", severity: "critical", message: `Temperature is ${health.temperature_c}°C` });
-    else if ((health.temperature_c ?? 0) >= 60) alerts.push({ id: `${device.id}-temperature`, device, type: "Temperature", severity: "warning", message: `High temperature: ${health.temperature_c}°C` });
-    if ((health.cpu_percent ?? 0) >= 80) alerts.push({ id: `${device.id}-cpu`, device, type: "CPU", severity: "warning", message: `CPU utilization is ${health.cpu_percent}%` });
-  }
-  return alerts;
-}
+import { AlertTriangleIcon, CheckCircleIcon, ShieldAlertIcon } from "../components/icons";
+import { Loading, NetraBadge, StatCard, ErrorBanner } from "../components/ui";
 
 export function AlertsPage({ navigate }: { navigate: (page: string, param?: string) => void }) {
   const [filter, setFilter] = useState("");
-  const result = useAsync<HealthRow[]>(async () => {
-    const devices = await api.devices();
-    const rows = await Promise.all(devices.map(async (device) => ({ device, health: await api.health(device.id) })));
-    return rows;
+  
+  const state = useAsync(async () => {
+    return await api.alerts();
   }, []);
-  const rows = result.data ?? [];
-  const alerts = useMemo(() => buildAlerts(rows).filter((item) => !filter || item.severity === filter), [rows, filter]);
-  const critical = alerts.filter((item) => item.severity === "critical").length;
-  const warning = alerts.filter((item) => item.severity === "warning").length;
-  if (result.loading) return <div className="page-content"><Loading what="health data" /></div>;
-  if (result.error) return <div className="page-content"><p className="error-banner">Unable to load discovered health data: {result.error}</p><button className="btn btn-primary" onClick={result.reload}>Retry</button></div>;
+  
+  const handleAcknowledge = async (id: string) => {
+    await api.acknowledgeAlert(id);
+    state.reload();
+  };
 
-  return <div className="page-content">
-    <div className="kpi-grid-5"><StatCard label="Devices" value={rows.length} icon={<AlertTriangleIcon size={20} />} iconTone="blue" /><StatCard label="Critical" value={critical} icon={<AlertTriangleIcon size={20} />} iconTone="red" /><StatCard label="Warning" value={warning} icon={<AlertTriangleIcon size={20} />} iconTone="amber" /><StatCard label="Power Supplies" value={rows.reduce((sum, row) => sum + row.health.power_supplies.length, 0)} icon={<PowerIcon size={20} />} iconTone="green" /><StatCard label="Active Alerts" value={alerts.length} icon={<AlertTriangleIcon size={20} />} iconTone="red" /></div>
-    <div className="filter-toolbar"><select className="filter-select" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="">All severities</option><option value="critical">Critical</option><option value="warning">Warning</option></select></div>
-    <div className="telemetry-section"><div className="telemetry-header"><h2>Discovered hardware telemetry</h2><span>Collected from SSH discovery; no demo values</span></div><div className="telemetry-cards-row">{rows.map(({ device, health }) => <div key={device.id}><HardwareTelemetryCard name={device.name} type={device.type} vendor={device.vendor ?? "unknown"} status={statusOf(device, health)} temp={health.temperature_c == null ? "Not available" : `${health.temperature_c}°C`} power={health.power_supplies.length ? health.power_supplies.map((item) => `PSU ${item.name}: ${item.status}`).join(" · ") : "Not available"} powerFail={health.power_supplies.some((item) => item.status.toLowerCase() !== "ok")} fan={health.fan_speed_rpm == null ? "Not available" : `${health.fan_speed_rpm} RPM`} fanFail={health.fan_speed_rpm === 0} alertsCount={buildAlerts([{ device, health }]).length} onClick={() => navigate("devices", device.id)} /><div className="telemetry-card-foot"><span><TempIcon size={13} /> {health.temperature_c ?? "—"}°C</span><span><FanIcon size={13} /> {health.fan_speed_rpm ?? "—"} RPM</span><span>{health.cluster_members.length > 1 ? `Cluster: ${health.cluster_members.join(", ")}` : "Standalone"}</span></div></div>)}</div></div>
-    <div className="table-card"><div style={{ padding: "16px 20px" }}><h2>Alerts ({alerts.length})</h2></div><div className="table-responsive"><table className="netra-table"><thead><tr><th>Device</th><th>Type</th><th>Severity</th><th>Message</th><th>Action</th></tr></thead><tbody>{alerts.map((item) => <tr key={item.id}><td><button className="table-device-link" onClick={() => navigate("devices", item.device.id)}>{item.device.name}</button></td><td>{item.type}</td><td><NetraBadge type={item.severity} /></td><td>{item.message}</td><td><button className="filter-btn" onClick={() => navigate("devices", item.device.id)}>Inspect</button></td></tr>)}</tbody></table></div></div>
-  </div>;
+  const handleResolve = async (id: string) => {
+    await api.resolveAlert(id);
+    state.reload();
+  };
+
+  const allAlerts = state.data ?? [];
+  const alerts = useMemo(() => allAlerts.filter((item) => !filter || item.severity === filter), [allAlerts, filter]);
+  
+  const critical = allAlerts.filter((item) => item.severity === "critical" && item.status === "new").length;
+  const warning = allAlerts.filter((item) => (item.severity === "high" || item.severity === "medium") && item.status === "new").length;
+  const openCount = allAlerts.filter(a => a.status === "new").length;
+
+  return (
+    <div className="page-content">
+      {state.error && <ErrorBanner message={state.error} />}
+      {state.loading && <Loading what="alerts" />}
+
+      {!state.loading && (
+        <>
+          <div className="kpi-grid-4">
+            <StatCard 
+              label="Total Alerts" 
+              value={allAlerts.length} 
+              icon={<ShieldAlertIcon size={20} />} 
+              iconTone="blue" 
+            />
+            <StatCard 
+              label="Open Alerts" 
+              value={openCount} 
+              icon={<AlertTriangleIcon size={20} />} 
+              iconTone={openCount > 0 ? "amber" : "green"} 
+            />
+            <StatCard 
+              label="Critical (New)" 
+              value={critical} 
+              icon={<AlertTriangleIcon size={20} />} 
+              iconTone={critical > 0 ? "red" : "green"} 
+            />
+            <StatCard 
+              label="Warning (New)" 
+              value={warning} 
+              icon={<AlertTriangleIcon size={20} />} 
+              iconTone={warning > 0 ? "amber" : "green"} 
+            />
+          </div>
+          
+          <div className="filter-toolbar">
+            <select className="filter-select" value={filter} onChange={(event) => setFilter(event.target.value)}>
+              <option value="">All severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="info">Info</option>
+            </select>
+          </div>
+          
+          <div className="table-card">
+            <div style={{ padding: "16px 20px" }}>
+              <h2 style={{ color: "var(--ink)" }}>Alerts ({alerts.length})</h2>
+            </div>
+            <div className="table-responsive">
+              <table className="netra-table">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>Device</th>
+                    <th>Category</th>
+                    <th>Severity</th>
+                    <th>Status</th>
+                    <th>Title / Message</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alerts.map((item) => (
+                    <tr key={item.id} style={{ opacity: item.status === 'resolved' ? 0.6 : 1 }}>
+                      <td className="table-time" style={{ whiteSpace: "nowrap" }}>
+                        {new Date(item.created_at).toLocaleString()}
+                      </td>
+                      <td>
+                        {item.device_id ? (
+                          <button className="table-device-link" onClick={() => navigate("devices", item.device_id!)}>
+                            {item.device_id.split("-")[0]}...
+                          </button>
+                        ) : "System"}
+                      </td>
+                      <td>{item.category.replace(/_/g, " ")}</td>
+                      <td><NetraBadge type={item.severity === "critical" ? "critical" : item.severity === "high" || item.severity === "medium" ? "warning" : "info"} /></td>
+                      <td><NetraBadge type={item.status === "new" ? "new" : item.status === "resolved" ? "resolved" : "acknowledged"} /></td>
+                      <td>
+                        <div style={{ fontWeight: 500, color: "var(--ink)" }}>{item.title}</div>
+                        {item.message && <div style={{ fontSize: "0.8rem", color: "var(--ink-2)", marginTop: 4 }}>{item.message}</div>}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          {item.status === "new" && (
+                            <button className="filter-btn" onClick={() => handleAcknowledge(item.id)}>
+                              Ack
+                            </button>
+                          )}
+                          {(item.status === "new" || item.status === "acknowledged") && (
+                            <button className="filter-btn" onClick={() => handleResolve(item.id)}>
+                              Resolve
+                            </button>
+                          )}
+                          {item.finding_id && (
+                            <button className="filter-btn" onClick={() => navigate("findings", item.finding_id!)}>
+                              Finding
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {alerts.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>
+                        No alerts match criteria
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

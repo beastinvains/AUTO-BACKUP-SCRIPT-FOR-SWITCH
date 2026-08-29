@@ -44,6 +44,7 @@ import { LogsPage } from "./pages/LogsPage";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { PoliciesPage } from "./pages/PoliciesPage";
+import { FindingsPage } from "./pages/FindingsPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
 import { SystemPage } from "./pages/SystemPages";
 import { TopologyPage } from "./pages/TopologyPage";
@@ -67,6 +68,10 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   alerts: {
     title: "Alerts",
     subtitle: "Monitor and respond to security issues and system anomalies",
+  },
+  findings: {
+    title: "Findings",
+    subtitle: "Security and compliance findings across the estate",
   },
   devices: {
     title: "Devices",
@@ -198,7 +203,8 @@ export default function App() {
     { page: "devices", label: "Devices", icon: <DevicesIcon />, hint: "Registered inventory and discovery state" },
     { page: "topology", label: "Topology", icon: <TopologyIcon />, hint: "Network map from LLDP neighbor evidence" },
     { page: "compliance", label: "Compliance", icon: <ComplianceIcon />, hint: "Security benchmarks and CIS audit" },
-    { page: "alerts", label: "Alerts", icon: <AlertsIcon />, hint: "Monitor and respond to security issues", badge: 12 },
+    { page: "findings", label: "Findings", icon: <ComplianceIcon />, hint: "Security findings across the estate" },
+    { page: "alerts", label: "Alerts", icon: <AlertsIcon />, hint: "Monitor and respond to security issues" },
     { page: "backups", label: "Backups", icon: <BackupsIcon />, hint: "Backup jobs and configuration snapshots" },
     { page: "monitoring", label: "Monitoring", icon: <MonitoringIcon />, hint: "Real-time hardware telemetry and sensors" },
     { page: "policies", label: "Policies", icon: <PoliciesIcon />, hint: "Security policy definitions and baseline rules" },
@@ -491,6 +497,8 @@ function Page({
       return <DashboardPage navigate={navigate} />;
     case "alerts":
       return <AlertsPage navigate={navigate} />;
+    case "findings":
+      return <FindingsPage navigate={navigate} />;
     case "devices":
       return param ? (
         <DeviceDetailPage deviceId={param} tab={tab} role={role} navigate={navigate} />
