@@ -9,6 +9,7 @@ Phase 2 backup/configuration-history endpoints.
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from adapters.base import AdapterError, BaseDeviceAdapter
 from adapters.juniper.adapter import parse_device_info, parse_health, parse_interfaces, parse_neighbors
 from configuration.service import ConfigurationService
 from core.models import DiscoveryResult, DiscoveryTarget
+from credentials import get_credentials
 from database.models import AuditLogRecord, Base, BackupJobRecord, DeviceRecord, ScheduleRecord
 from storage.local import LocalArtifactStorage
 from tests.asgi_client import AsgiClient
@@ -141,6 +143,26 @@ class ApiTestCase(unittest.TestCase):
 
 
 class DeviceApiTests(ApiTestCase):
+    def test_compliance_trend_endpoint_returns_points(self):
+        response = self.client.get("/api/compliance/trend", params={"days": 7})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("points", response.json())
+
+    def test_credential_loader_accepts_user_or_username_env_names(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / ".env"
+            env_path.write_text("LAB_JUNIPER_USER=legacy-user\nLAB_JUNIPER_PASSWORD=legacy-pass\n", encoding="utf-8")
+            self.assertEqual(
+                get_credentials("lab_juniper", env_file=env_path),
+                {"username": "legacy-user", "password": "legacy-pass"},
+            )
+
+            env_path.write_text("LAB_JUNIPER_USERNAME=canonical-user\nLAB_JUNIPER_PASSWORD=canonical-pass\n", encoding="utf-8")
+            self.assertEqual(
+                get_credentials("lab_juniper", env_file=env_path),
+                {"username": "canonical-user", "password": "canonical-pass"},
+            )
+
     def test_list_and_read_a_device(self):
         device_id = self.add_device("core-sw01", "10.10.10.10", vendor="Juniper", site="dc-a")
         listing = self.client.get("/api/devices")

@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.orm import Session
 
 from adapters.juniper.adapter import JuniperAdapter
