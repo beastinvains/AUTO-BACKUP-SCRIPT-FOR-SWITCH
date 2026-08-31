@@ -182,11 +182,13 @@ export type TrendPoint = { label: string; caption?: string; value: number };
  */
 export function ComplianceTrendChart({
   points,
-  rangeLabel = "Last 7 Days",
+  complianceData,
+  range = "7",
   onRangeChange,
 }: {
   points: { date: string; value: number }[];
-  rangeLabel?: string;
+  complianceData?: { score: number | null; total_evaluations: number; pass: number; fail: number; unknown: number } | null;
+  range?: string;
   onRangeChange?: (range: string) => void;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -210,6 +212,9 @@ export function ComplianceTrendChart({
   const areaD = points.length > 0
     ? `${pathD} L ${getX(points.length - 1)} ${pad.top + plotH} L ${getX(0)} ${pad.top + plotH} Z`
     : "";
+
+  // Show current compliance score if available but no historical data
+  const hasCurrentScore = complianceData && complianceData.score !== null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}>
@@ -319,6 +324,42 @@ export function ComplianceTrendChart({
             }}
           >
             <strong>{points[hoverIndex].date}</strong>: {points[hoverIndex].value}%
+          </div>
+        )}
+
+        {/* Empty state when no historical data but current score exists */}
+        {points.length === 0 && hasCurrentScore && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: height,
+            color: "var(--ink-3)",
+            gap: "8px"
+          }}>
+            <div style={{ fontSize: "2.5rem", fontWeight: "700", color: "#10b981" }}>
+              {complianceData!.score}%
+            </div>
+            <div style={{ fontSize: "0.85rem" }}>
+              Current compliance score — no historical trend data yet
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--ink-4)" }}>
+              Run policy evaluations over time to build trend history
+            </div>
+          </div>
+        )}
+
+        {/* Empty state when no data at all */}
+        {points.length === 0 && !hasCurrentScore && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: height,
+            color: "var(--ink-3)",
+          }}>
+            No compliance data — run policy evaluations to populate
           </div>
         )}
       </div>

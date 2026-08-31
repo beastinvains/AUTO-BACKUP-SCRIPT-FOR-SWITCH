@@ -1,4 +1,4 @@
-# Mock lab guide — run the whole platform without network hardware
+ # Mock lab guide — run the whole platform without network hardware
 
 You do not need a switch, a router or a firewall to exercise this platform. `tests/mock_lab.py`
 serves a small estate of six mock Junos devices, one SSH port each, from any machine on your LAN.

@@ -9,18 +9,25 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from adapters.juniper.adapter import JuniperAdapter
+from alerts.service import AlertsService
 from audit.query import CATEGORIES, STATUSES, query_events
 from backend.dashboard import build_summary
+from config import SETTINGS_FILE, load_config, load_settings
+from configuration.service import ConfigurationService, configuration_diff
 from core.models import DiscoveryTarget
 from database.models import Base
 from database.models import AuditLogRecord, BackupJobRecord, ConfigurationVersionRecord, DeviceRecord
 from database.session import SessionLocal, engine
 from discovery.jobs import DiscoveryService
+from evidence.service import EvidenceService
+from findings.service import FindingsService
 from inventory.repository import InventoryRepository
 from inventory.service import DeviceConflict, DeviceInput, InventoryService
 from backup_service import BackupService
-from configuration.service import ConfigurationService, configuration_diff
-from config import SETTINGS_FILE, load_config, load_settings
+from monitoring.service import MonitoringService
+from policy.service import PolicyInput, PolicyService
+from policy.seed_policies import seed as seed_default_policies
+from reports.service import ReportsService
 from schedule_service import ScheduleService, ScheduleSpec
 from scheduler import ScheduleRunner
 from storage.local import LocalArtifactStorage
@@ -30,6 +37,8 @@ from topology.service import TopologyService
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
+    # Seed the 7 default security policies on first startup (idempotent).
+    seed_default_policies(SessionLocal)
     # Nothing runs until an operator creates a schedule, so starting the clock here is
     # inert on a fresh database and keeps one scheduler in one place.
     schedule_runner.start()
@@ -39,7 +48,7 @@ async def lifespan(app: FastAPI):
         schedule_runner.stop()
 
 
-app = FastAPI(title="Infrastructure Vision Platform - Phase 3", lifespan=lifespan)
+app = FastAPI(title="Infrastructure Vision Platform - Phase 4", lifespan=lifespan)
 # The React (Vite) client runs on http://localhost:5173 in development. The dev
 # server also proxies /api, so this is a belt-and-suspenders allowance and lets a
 # production build call the API directly. X-Role/X-Actor are covered by "*".
@@ -49,12 +58,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-service = DiscoveryService(JuniperAdapter(), SessionLocal)
-backup_service = BackupService(JuniperAdapter(), SessionLocal, ConfigurationService(LocalArtifactStorage(load_config().backup_root)))
+
+# ---------- Shared singletons --------------------------------------------------
+_config = load_config()
+_adapter = JuniperAdapter()
+_cfg_service = ConfigurationService(LocalArtifactStorage(_config.backup_root))
+_evidence_service = EvidenceService(SessionLocal, _config.backup_root)
+_alerts_service = AlertsService(SessionLocal)
+_findings_service = FindingsService(SessionLocal, alerts_service=_alerts_service)
+_policy_service = PolicyService(SessionLocal, findings_service=_findings_service)
+_monitoring_service = MonitoringService(
+    SessionLocal, _adapter, _cfg_service,
+    evidence_service=_evidence_service,
+    alerts_service=_alerts_service,
+)
+_reports_service = ReportsService(SessionLocal, evidence_service=_evidence_service)
+
+service = DiscoveryService(_adapter, SessionLocal)
+backup_service = BackupService(_adapter, SessionLocal, _cfg_service)
 topology_service = TopologyService(SessionLocal)
 inventory_service = InventoryService(SessionLocal)
 schedule_service = ScheduleService(SessionLocal, backup_service)
 schedule_runner = ScheduleRunner(schedule_service)
+
 
 
 def run_scheduled_backup() -> dict:
@@ -409,4 +435,314 @@ def log_options(session: Session = Depends(get_session)):
 
 @app.get("/api/dashboard")
 def dashboard(session: Session = Depends(get_session)):
-    return build_summary(session, topology_service.graph()["stats"])
+    base = build_summary(session, topology_service.graph()["stats"])
+    try:
+        base["security_posture"] = _reports_service.get_security_posture()
+    except Exception:
+        base["security_posture"] = None
+    return base
+
+
+@app.get("/api/compliance/trend")
+def compliance_trend(
+    days: int = Query(default=7, ge=1, le=90),
+    session: Session = Depends(get_session),
+):
+    """Historical compliance scores over time for trend chart."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import func, select
+    from database.models import PolicyEvaluationRecord
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+
+    # Get evaluations grouped by day
+    evals = session.execute(
+        select(
+            func.date(PolicyEvaluationRecord.evaluated_at).label("eval_date"),
+            func.count().label("total"),
+            func.sum(func.cast(PolicyEvaluationRecord.result == "pass", Integer)).label("pass_count"),
+        )
+        .where(PolicyEvaluationRecord.evaluated_at >= start)
+        .group_by(func.date(PolicyEvaluationRecord.evaluated_at))
+        .order_by(func.date(PolicyEvaluationRecord.evaluated_at))
+    ).all()
+
+    points = []
+    for row in evals:
+        date_str = str(row.eval_date)
+        total = row.total or 0
+        pass_count = row.pass_count or 0
+        score = round((pass_count / total) * 100, 1) if total > 0 else 0
+        points.append({"date": date_str, "value": score})
+
+    return {"days": days, "points": points}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Monitoring
+# ---------------------------------------------------------------------------
+
+@app.get("/api/monitoring")
+def monitoring_overview():
+    """Estate-wide monitoring coverage: last collection per device, reachability, telemetry values."""
+    return _monitoring_service.get_monitoring_overview()
+
+
+@app.get("/api/monitoring/devices/{device_id}")
+def monitoring_device(device_id: str, session: Session = Depends(get_session)):
+    """Latest telemetry + service observations for one device."""
+    if not session.get(DeviceRecord, device_id):
+        raise HTTPException(404, "Device not found")
+    telemetry = _monitoring_service.get_latest_telemetry(device_id)
+    services = _monitoring_service.get_service_observations(device_id)
+    return {"telemetry": telemetry, "services": services}
+
+
+@app.get("/api/monitoring/history/{device_id}")
+def monitoring_history(
+    device_id: str,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    session: Session = Depends(get_session),
+):
+    if not session.get(DeviceRecord, device_id):
+        raise HTTPException(404, "Device not found")
+    return _monitoring_service.get_telemetry_history(device_id, start=start, end=end, limit=limit)
+
+
+@app.post("/api/monitoring/run", status_code=202)
+def run_monitoring(
+    background: BackgroundTasks,
+    kind: str = Query(default="telemetry", pattern=r"^(telemetry|service|all)$"),
+    device_ids: list[str] = Query(default=[]),
+    actor: str = Depends(require_backup_operator),
+):
+    """Trigger a manual monitoring collection run in the background."""
+    actual_ids = device_ids or None
+    background.add_task(
+        _monitoring_service.run_collection,
+        kind=kind,
+        device_ids=actual_ids,
+        triggered_by="manual",
+    )
+    return {"status": "STARTED", "kind": kind}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Policies
+# ---------------------------------------------------------------------------
+
+@app.get("/api/policies")
+def list_policies(
+    category: str | None = None,
+    severity: str | None = None,
+    enabled: bool | None = None,
+):
+    return _policy_service.list(category=category, severity=severity, enabled=enabled)
+
+
+@app.post("/api/policies", status_code=201)
+def create_policy(payload: PolicyInput, actor: str = Depends(require_admin)):
+    try:
+        return _policy_service.create(payload, actor=actor)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/policies/{policy_id}")
+def get_policy(policy_id: str):
+    try:
+        return _policy_service.get(policy_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Policy not found") from exc
+
+
+@app.put("/api/policies/{policy_id}")
+def update_policy(policy_id: str, payload: PolicyInput, actor: str = Depends(require_admin)):
+    try:
+        return _policy_service.update(policy_id, payload, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Policy not found") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.delete("/api/policies/{policy_id}", status_code=204)
+def delete_policy(policy_id: str, actor: str = Depends(require_admin)):
+    try:
+        _policy_service.delete(policy_id, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Policy not found") from exc
+    return Response(status_code=204)
+
+
+@app.post("/api/policies/{policy_id}/evaluate", status_code=202)
+def evaluate_policy(
+    policy_id: str,
+    device_ids: list[str] = Query(default=[]),
+    background: BackgroundTasks = BackgroundTasks(),
+    actor: str = Depends(require_backup_operator),
+):
+    """Evaluate a policy across all applicable devices (async)."""
+    try:
+        _policy_service.get(policy_id)  # 404 check
+    except KeyError as exc:
+        raise HTTPException(404, "Policy not found") from exc
+    actual_ids = device_ids or None
+    background.add_task(_policy_service.evaluate_policy, policy_id, actual_ids)
+    return {"policy_id": policy_id, "status": "EVALUATING"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Findings
+# ---------------------------------------------------------------------------
+
+@app.get("/api/findings")
+def list_findings(
+    severity: str | None = None,
+    status: str | None = None,
+    device_id: str | None = None,
+    policy_id: str | None = None,
+    category: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    return _findings_service.list(
+        severity=severity, status=status, device_id=device_id,
+        policy_id=policy_id, category=category, start=start, end=end, limit=limit,
+    )
+
+
+@app.get("/api/findings/{finding_id}")
+def get_finding(finding_id: str):
+    try:
+        return _findings_service.get(finding_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Finding not found") from exc
+
+
+@app.post("/api/findings/{finding_id}/acknowledge")
+def acknowledge_finding(finding_id: str, actor: str = Depends(require_backup_operator)):
+    try:
+        return _findings_service.acknowledge(finding_id, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Finding not found") from exc
+
+
+@app.post("/api/findings/{finding_id}/resolve")
+def resolve_finding(
+    finding_id: str,
+    note: str | None = None,
+    actor: str = Depends(require_backup_operator),
+):
+    try:
+        return _findings_service.resolve(finding_id, actor=actor, note=note)
+    except KeyError as exc:
+        raise HTTPException(404, "Finding not found") from exc
+
+
+@app.post("/api/findings/{finding_id}/suppress")
+def suppress_finding(finding_id: str, actor: str = Depends(require_admin)):
+    try:
+        return _findings_service.suppress(finding_id, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Finding not found") from exc
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Alerts
+# ---------------------------------------------------------------------------
+
+@app.get("/api/alerts")
+def list_alerts(
+    severity: str | None = None,
+    status: str | None = None,
+    device_id: str | None = None,
+    category: str | None = None,
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    return _alerts_service.list(
+        severity=severity, status=status, device_id=device_id,
+        category=category, limit=limit,
+    )
+
+
+@app.get("/api/alerts/{alert_id}")
+def get_alert(alert_id: str):
+    try:
+        return _alerts_service.get(alert_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Alert not found") from exc
+
+
+@app.post("/api/alerts/{alert_id}/acknowledge")
+def acknowledge_alert(alert_id: str, actor: str = Depends(require_backup_operator)):
+    try:
+        return _alerts_service.acknowledge(alert_id, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Alert not found") from exc
+
+
+@app.post("/api/alerts/{alert_id}/resolve")
+def resolve_alert(alert_id: str, actor: str = Depends(require_backup_operator)):
+    try:
+        return _alerts_service.resolve(alert_id, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Alert not found") from exc
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Evidence
+# ---------------------------------------------------------------------------
+
+@app.get("/api/evidence")
+def list_evidence(device_id: str, evidence_type: str | None = None, limit: int = 100):
+    return [
+        _evidence_service.serialize(r)
+        for r in _evidence_service.list_for_device(device_id, evidence_type, limit)
+    ]
+
+
+@app.get("/api/evidence/{evidence_id}")
+def get_evidence(evidence_id: str):
+    record = _evidence_service.get(evidence_id)
+    if not record:
+        raise HTTPException(404, "Evidence record not found")
+    return _evidence_service.serialize(record)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Security Posture and Reports
+# ---------------------------------------------------------------------------
+
+@app.get("/api/security-posture")
+def security_posture():
+    """Estate-wide real-time security posture derived from stored findings, alerts, telemetry."""
+    return _reports_service.get_security_posture()
+
+
+@app.post("/api/reports/device/{device_id}", status_code=201)
+def generate_device_report(device_id: str, session: Session = Depends(get_session), actor: str = Depends(require_backup_operator)):
+    if not session.get(DeviceRecord, device_id):
+        raise HTTPException(404, "Device not found")
+    try:
+        return _reports_service.generate_device_report(device_id, actor=actor)
+    except KeyError as exc:
+        raise HTTPException(404, "Device not found") from exc
+
+
+@app.post("/api/reports/estate", status_code=201)
+def generate_estate_report(actor: str = Depends(require_backup_operator)):
+    return _reports_service.generate_estate_report(actor=actor)
+
+
+@app.get("/api/reports/{report_id}")
+def get_report(report_id: str):
+    report = _reports_service.get_report(report_id)
+    if not report:
+        raise HTTPException(404, "Report not found")
+    return report
+

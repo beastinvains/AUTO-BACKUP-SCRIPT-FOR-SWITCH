@@ -45,7 +45,7 @@ Apply the PostgreSQL migration after setting DATABASE_URL / updating alembic.ini
     .venv/bin/alembic upgrade head
 
 For a development-only demonstration, the API creates the local SQLite schema at startup. PostgreSQL is the intended persistent deployment database.
-
+scre
 Submit a discovery job with an allowlisted Juniper target. The API accepts a JSON array of target objects at POST /api/discovery/jobs. Query GET /api/devices, GET /api/devices/{id}, and the interfaces, neighbors and health subroutes afterwards.
 
 For a seed-driven local run, after creating config/devices.yaml and .env, use:

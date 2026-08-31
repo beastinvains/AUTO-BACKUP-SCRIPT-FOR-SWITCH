@@ -229,6 +229,7 @@ export const api = {
 
   // ---- Phase 4: Posture & Reports ------------------------------------------
   securityPosture: () => request<import("./types").SecurityPosture>("/api/security-posture"),
+  complianceTrend: (days?: number) => request<{ days: number; points: { date: string; value: number }[] }>("/api/compliance/trend", { params: { days } }),
   generateDeviceReport: (deviceId: string) => request<import("./types").SecurityReport>(`/api/reports/device/${deviceId}`, { method: "POST" }),
   generateEstateReport: () => request<import("./types").SecurityReport>("/api/reports/estate", { method: "POST" }),
   report: (id: string) => request<import("./types").SecurityReport>(`/api/reports/${id}`),

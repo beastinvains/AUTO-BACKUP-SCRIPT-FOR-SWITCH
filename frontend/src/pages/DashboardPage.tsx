@@ -3,7 +3,7 @@
  * Matches the Dashboard design in the mockups.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { api } from "../api";
 import { useAsync } from "../hooks";
 import {
@@ -29,24 +29,7 @@ import {
   NetraBadge,
   StatCard,
 } from "../components/ui";
-
-const TREND_POINTS_7D = [
-  { date: "May 13", value: 48 },
-  { date: "May 14", value: 65 },
-  { date: "May 15", value: 68 },
-  { date: "May 16", value: 70 },
-  { date: "May 17", value: 73 },
-  { date: "May 18", value: 76 },
-  { date: "May 19", value: 82 },
-];
-
-const RECENT_ACTIVITY_MOCK = [
-  { id: "act-1", text: "Backup completed for Core-Router-1", time: "10:24 AM", tone: "green", icon: "check" },
-  { id: "act-2", text: "Policy violation detected on Dist-Switch-2", time: "09:58 AM", tone: "amber", icon: "alert" },
-  { id: "act-3", text: "Configuration change on Firewall-1", time: "09:18 AM", tone: "purple", icon: "change" },
-  { id: "act-4", text: "Device Core-Switch-1 came online", time: "08:45 AM", tone: "blue", icon: "device" },
-  { id: "act-5", text: "Compliance scan completed", time: "08:30 AM", tone: "green", icon: "check" },
-];
+import { relative } from "../format";
 
 export function DashboardPage({ navigate }: { navigate: (page: string, param?: string) => void }) {
   const [range, setRange] = useState("7");
@@ -65,29 +48,52 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
     }
   }, []);
 
+  const trendState = useAsync(() => api.complianceTrend(parseInt(range, 10)), [range]);
+
   const liveDevices = state.data?.devices ?? [];
   const db = state.data?.dashboard;
   const liveAlerts = state.data?.alerts ?? [];
+  const liveLogs = state.data?.logs ?? [];
+  const trendData = trendState.data;
 
-  const totalDevices = db?.infrastructure.total_devices || (liveDevices.length > 0 ? liveDevices.length : 43);
-  const onlineDevices = db?.infrastructure.online || 38;
-  const offlineDevices = db?.infrastructure.offline || (totalDevices - onlineDevices > 0 ? totalDevices - onlineDevices : 5);
+  const totalDevices = db?.infrastructure.total_devices ?? liveDevices.length ?? 0;
+  const onlineDevices = db?.infrastructure.online ?? liveDevices.filter(d => d.status === "online").length ?? 0;
+  const offlineDevices = db?.infrastructure.offline ?? liveDevices.filter(d => d.status === "offline").length ?? 0;
+  const degradedDevices = db?.infrastructure.degraded ?? liveDevices.filter(d => d.status === "degraded").length ?? 0;
+  const unknownDevices = db?.infrastructure.unknown ?? liveDevices.filter(d => d.status === "unknown").length ?? 0;
 
   const posture = db?.security_posture;
-  const complianceScore = posture?.compliance?.score ?? "N/A";
+  const complianceScore = posture?.compliance?.score ?? null;
   const openAlertsCount = posture?.alerts?.new ?? 0;
   
-  const alertsSeveritySegments = [
+  const alertsSeveritySegments = useMemo(() => [
     { label: "Critical", value: posture?.alerts?.by_severity?.critical ?? 0, color: "#ef4444" },
     { label: "Warning", value: (posture?.alerts?.by_severity?.high ?? 0) + (posture?.alerts?.by_severity?.medium ?? 0), color: "#f59e0b" },
     { label: "Info", value: posture?.alerts?.by_severity?.info ?? 0, color: "#3b82f6" },
-  ];
+  ], [posture]);
 
-  const deviceStatusSegments = [
-    { label: "Online", value: onlineDevices, percentage: Math.round((onlineDevices / totalDevices) * 100) || 0, color: "#10b981" },
-    { label: "Offline", value: offlineDevices, percentage: Math.round((offlineDevices / totalDevices) * 100) || 0, color: "#ef4444" },
-    { label: "Unknown", value: totalDevices - onlineDevices - offlineDevices, percentage: Math.round(((totalDevices - onlineDevices - offlineDevices) / totalDevices) * 100) || 0, color: "#64748b" },
-  ];
+  const deviceStatusSegments = useMemo(() => [
+    { label: "Online", value: onlineDevices, percentage: totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0, color: "#10b981" },
+    { label: "Offline", value: offlineDevices, percentage: totalDevices > 0 ? Math.round((offlineDevices / totalDevices) * 100) : 0, color: "#ef4444" },
+    { label: "Degraded", value: degradedDevices, percentage: totalDevices > 0 ? Math.round((degradedDevices / totalDevices) * 100) : 0, color: "#f59e0b" },
+    { label: "Unknown", value: unknownDevices, percentage: totalDevices > 0 ? Math.round((unknownDevices / totalDevices) * 100) : 0, color: "#64748b" },
+  ], [totalDevices, onlineDevices, offlineDevices, degradedDevices, unknownDevices]);
+
+  const recentActivity = useMemo(() => {
+    if (!liveLogs || liveLogs.length === 0) return [];
+    return liveLogs.slice(0, 10).map((log) => ({
+      id: log.id,
+      text: log.summary || `${log.category}: ${log.event}`,
+      time: relative(log.timestamp),
+      tone: log.status === "SUCCESS" ? "green" : log.status === "FAILED" ? "red" : log.status === "PARTIAL" ? "amber" : "blue",
+      icon: log.status === "SUCCESS" ? "check" : log.status === "FAILED" ? "alert" : "change",
+    }));
+  }, [liveLogs]);
+
+  const trendPoints = useMemo(() => {
+    if (!trendData?.points) return [];
+    return trendData.points.map((p) => ({ date: p.date, value: p.value }));
+  }, [trendData]);
 
   return (
     <div className="page-content">
@@ -103,15 +109,21 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
           indicators={[
             { text: `● Online ${onlineDevices}`, tone: "green" },
             { text: `● Offline ${offlineDevices}`, tone: "red" },
+            { text: `● Degraded ${degradedDevices}`, tone: "amber" },
+            { text: `● Unknown ${unknownDevices}`, tone: "blue" },
           ]}
           onClick={() => navigate("devices")}
         />
         <StatCard
           label="Compliance Score"
-          value={complianceScore !== "N/A" ? `${complianceScore}%` : "N/A"}
+          value={complianceScore !== null ? `${complianceScore}%` : "N/A"}
           icon={<ComplianceIcon size={20} />}
           iconTone="purple"
-          indicators={[]}
+          indicators={posture?.compliance ? [
+            { text: `● Pass ${posture.compliance.pass}`, tone: "green", dot: true },
+            { text: `● Fail ${posture.compliance.fail}`, tone: "red", dot: true },
+            { text: `● Unknown ${posture.compliance.unknown}`, tone: "blue", dot: true },
+          ] : []}
           onClick={() => navigate("compliance")}
         />
         <StatCard
@@ -122,6 +134,7 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
           indicators={[
             { text: `● Critical ${posture?.alerts?.by_severity?.critical ?? 0}`, tone: "red" },
             { text: `● Warning ${(posture?.alerts?.by_severity?.high ?? 0) + (posture?.alerts?.by_severity?.medium ?? 0)}`, tone: "amber" },
+            { text: `● Info ${posture?.alerts?.by_severity?.info ?? 0}`, tone: "blue" },
           ]}
           onClick={() => navigate("alerts")}
         />
@@ -155,7 +168,16 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
                   <option value="30">Last 30 Days</option>
                 </select>
               </div>
-              <ComplianceTrendChart points={TREND_POINTS_7D} />
+              <ComplianceTrendChart 
+                points={trendPoints}
+                complianceData={posture?.compliance}
+                range={range}
+              />
+              {complianceScore === null && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "120px", color: "var(--ink-3)" }}>
+                  No compliance data — run policy evaluations to populate
+                </div>
+              )}
             </div>
 
             {/* Alerts by Severity Donut */}
@@ -172,6 +194,11 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
                   strokeWidth={14}
                 />
               </div>
+              {openAlertsCount === 0 && posture && (
+                <div style={{ textAlign: "center", padding: "16px", color: "var(--ink-3)" }}>
+                  No active alerts
+                </div>
+              )}
             </div>
           </div>
 
@@ -200,7 +227,7 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
                   {liveAlerts.length === 0 ? (
                     <tr>
                       <td colSpan={6} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>
-                        No new alerts
+                        No active alerts
                       </td>
                     </tr>
                   ) : liveAlerts.map((alt) => (
@@ -218,7 +245,7 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
                            <span style={{ color: "var(--ink-3)" }}>System</span>
                         )}
                       </td>
-                      <td>{alt.category}</td>
+                      <td>{alt.category.replace(/_/g, " ")}</td>
                       <td>
                         <NetraBadge type={alt.severity === "critical" ? "critical" : alt.severity === "high" || alt.severity === "medium" ? "warning" : "info"} />
                       </td>
@@ -252,7 +279,7 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
             <div style={{ padding: "6px 0" }}>
               <NetraDonut
                 segments={deviceStatusSegments}
-                centerValue={43}
+                centerValue={totalDevices}
                 centerLabel="Total"
                 size={120}
                 strokeWidth={13}
@@ -271,7 +298,11 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
               <h2 className="panel-title">Recent Activity</h2>
             </div>
             <div className="activity-feed">
-              {RECENT_ACTIVITY_MOCK.map((act) => (
+              {recentActivity.length === 0 ? (
+                <div style={{ padding: "16px", textAlign: "center", color: "var(--ink-3)" }}>
+                  No recent activity
+                </div>
+              ) : recentActivity.map((act) => (
                 <div key={act.id} className="activity-item">
                   <div className="activity-left">
                     {act.tone === "green" && <CheckCircleIcon size={15} style={{ color: "var(--brand-emerald-light)", flexShrink: 0 }} />}
@@ -291,7 +322,7 @@ export function DashboardPage({ navigate }: { navigate: (page: string, param?: s
             </div>
           </div>
 
-          {/* System Health */}
+          {/* System Health - based on real monitoring data */}
           <div className="netra-panel">
             <div className="netra-panel-header">
               <h2 className="panel-title">System Health</h2>
