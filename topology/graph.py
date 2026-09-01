@@ -13,6 +13,7 @@ Rules that keep the graph honest (blueprint 14.3 / 15 "Incorrect topology"):
 
 from __future__ import annotations
 
+from collections import defaultdict
 from topology.normalization import (
     DeviceFacts, DeviceIndex, NeighborFacts, external_node_key, normalize_chassis_id,
 )
@@ -26,6 +27,17 @@ CONFIDENCE_SINGLE_SIDED = 0.7   # both endpoints managed, only one reported the 
 CONFIDENCE_UNRESOLVED = 0.4     # far endpoint is not in inventory
 
 Endpoint = tuple[str, str | None]
+
+INFRASTRUCTURE_TYPES = {"switch", "router", "firewall", "load_balancer", "access_point"}
+END_DEVICE_TYPES = {"server", "hypervisor", "virtual_machine", "other"}
+
+def is_infrastructure_type(device_type: str) -> bool:
+    """Return True for infrastructure devices (switches, routers, firewalls, APs)."""
+    return device_type.casefold() in INFRASTRUCTURE_TYPES
+
+def is_end_device_type(device_type: str) -> bool:
+    """Return True for end-user devices (phones, laptops, PCs, servers)."""
+    return device_type.casefold() in END_DEVICE_TYPES
 
 
 def _endpoint(device_id: str, interface: str | None) -> Endpoint:
@@ -93,6 +105,7 @@ def build_graph(
     vendor: str | None = None,
     device_type: str | None = None,
     status: str | None = None,
+    show_end_devices: bool = False,
 ) -> dict:
     """Turn inventory devices plus LLDP observations into ``{nodes, edges, stats, filters}``."""
     index = DeviceIndex.build(devices)
@@ -155,30 +168,83 @@ def build_graph(
                                      "observations": [], "interface_evidence": "partial"})
         link["observations"].append(_observation(neighbor, names.get(neighbor.device_id, neighbor.device_id)))
 
-    edges = []
+    # Aggregate trunk/uplink links ONLY when they share the same remote chassis ID
+    # (indicating a LAG/bundle). Otherwise keep each physical link separate.
+    aggregated_links: dict[tuple[str, str, str | None], dict] = {}
     for (first, second), link in links.items():
         (source, source_interface), (target, target_interface) = first, second
+        # Get remote chassis ID from observations if available
+        remote_chassis = None
+        for obs in link["observations"]:
+            if obs.get("remote_chassis_id"):
+                remote_chassis = normalize_chassis_id(obs["remote_chassis_id"])
+                break
+        
+        # Only aggregate when we have a remote chassis ID (trunk/LAG evidence)
+        # For links without chassis ID, keep them separate by interface
+        if remote_chassis:
+            agg_key = (min(source, target), max(source, target), remote_chassis)
+        else:
+            agg_key = (source, target, source_interface, target_interface)
+        
+        existing = aggregated_links.get(agg_key)
+        if existing is None:
+            aggregated_links[agg_key] = {
+                "endpoints": (first, second),
+                "both_managed": link["both_managed"],
+                "observations": list(link["observations"]),
+                "interface_evidence": link["interface_evidence"],
+                "interfaces": [(source_interface, target_interface)],
+                "remote_chassis": remote_chassis,
+                "source": source, "target": target,
+                "source_interface": source_interface,
+                "target_interface": target_interface,
+            }
+        else:
+            existing["observations"].extend(link["observations"])
+            if source_interface or target_interface:
+                existing["interfaces"].append((source_interface, target_interface))
+            if existing["interface_evidence"] == "partial" and link["interface_evidence"] == "complete":
+                existing["interface_evidence"] = "complete"
+
+    edges = []
+    for agg_key, link in aggregated_links.items():
         edges.append({
-            "id": f"{source}:{source_interface or '?'}--{target}:{target_interface or '?'}",
-            "source": source, "target": target, "relationship_type": CONNECTED_TO,
-            "source_interface": source_interface, "target_interface": target_interface,
+            "id": f"{link['source']}:{link['source_interface'] or '?'}--{link['target']}:{link['target_interface'] or '?'}",
+            "source": link["source"], "target": link["target"], "relationship_type": CONNECTED_TO,
+            "source_interface": link["source_interface"],
+            "target_interface": link["target_interface"],
             "confidence": _confidence(link["both_managed"], len(link["observations"])),
             "interface_evidence": link["interface_evidence"],
             "corroborated": link["both_managed"] and len(link["observations"]) > 1,
             "evidence": {"source": "lldp", "observations": link["observations"]},
+            "aggregated_interfaces": link["interfaces"],
         })
+
+    # Count devices by type BEFORE filtering
+    all_device_nodes = device_nodes
+    end_device_count = sum(1 for n in all_device_nodes.values() if is_end_device_type(n.get("type", "")))
+    infra_device_count = sum(1 for n in all_device_nodes.values() if is_infrastructure_type(n.get("type", "")))
+    total_device_count = len(all_device_nodes)
+
+    # Filter end devices if not requested (default: hide end devices)
+    if not show_end_devices:
+        end_device_ids = {
+            node_id for node_id, node in device_nodes.items()
+            if is_end_device_type(node.get("type", ""))
+        }
+        for end_id in end_device_ids:
+            device_nodes.pop(end_id, None)
 
     kept = {node_id: node for node_id, node in device_nodes.items()
             if _wanted(node["site"], site) and _wanted(node["vendor"], vendor)
             and _wanted(node["type"], device_type) and _wanted(node["status"], status)}
-    # Keep an edge only when both endpoints survive the filter, where "survives" means a
-    # kept device or an external node still anchored to one.
+    # Keep an edge only when both endpoints survive the filter
     visible = kept.keys() | external_nodes.keys()
     edges = [edge for edge in edges
              if edge["source"] in visible and edge["target"] in visible
              and (edge["source"] in kept or edge["target"] in kept)]
-    # An external node only exists because something points at it; drop it once the
-    # device that reported it has been filtered out.
+    # An external node only exists because something points at it
     linked = {endpoint for edge in edges for endpoint in (edge["source"], edge["target"])}
     nodes = list(kept.values()) + [node for node_id, node in external_nodes.items() if node_id in linked]
 
@@ -191,11 +257,14 @@ def build_graph(
 
     nodes.sort(key=lambda node: (node["kind"] != "device", str(node["hostname"]).casefold()))
     edges.sort(key=lambda edge: edge["id"])
+    
     return {
         "nodes": nodes,
         "edges": edges,
         "stats": {
             "device_count": sum(node["kind"] == "device" for node in nodes),
+            "infrastructure_device_count": infra_device_count,
+            "end_device_count": end_device_count,
             "external_count": sum(node["kind"] == "external" for node in nodes),
             "node_count": len(nodes),
             "edge_count": len(edges),
@@ -205,9 +274,9 @@ def build_graph(
             "ambiguous_identities": sorted(ambiguous_hits),
         },
         "filters": {
-            "sites": sorted({node["site"] for node in device_nodes.values() if node["site"]}),
-            "vendors": sorted({node["vendor"] for node in device_nodes.values() if node["vendor"]}),
-            "types": sorted({node["type"] for node in device_nodes.values() if node["type"]}),
-            "statuses": sorted({node["status"] for node in device_nodes.values() if node["status"]}),
+            "sites": sorted({node["site"] for node in all_device_nodes.values() if node["site"]}),
+            "vendors": sorted({node["vendor"] for node in all_device_nodes.values() if node["vendor"]}),
+            "types": sorted({node["type"] for node in all_device_nodes.values() if node["type"]}),
+            "statuses": sorted({node["status"] for node in all_device_nodes.values() if node["status"]}),
         },
     }

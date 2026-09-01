@@ -120,9 +120,10 @@ class SettingsInput(BaseModel):
 
 
 def topology_filters(site: str | None = None, vendor: str | None = None,
-                     device_type: str | None = None, status: str | None = None) -> dict:
+                     device_type: str | None = None, status: str | None = None,
+                     show_end_devices: bool = False) -> dict:
     """Query filters shared by every topology route (Phase 3 section 12)."""
-    return {"site": site, "vendor": vendor, "device_type": device_type, "status": status}
+    return {"site": site, "vendor": vendor, "device_type": device_type, "status": status, "show_end_devices": show_end_devices}
 
 
 @app.post("/api/discovery/jobs")

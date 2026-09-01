@@ -141,7 +141,8 @@ class GraphConstructionTests(unittest.TestCase):
         twin_b = DeviceFacts(id="b", name="core-sw01.site-b.local", management_ip="10.2.2.2")
         graph = build_graph([twin_a, twin_b, ACCESS],
                             [observed("d-access", "ge-0/0/1", name="core-sw01", remote="ge-0/0/0")])
-        self.assertEqual(graph["stats"]["device_count"], 3)
+        # With default show_end_devices=False, twin_a and twin_b (type="other") are filtered out
+        self.assertEqual(graph["stats"]["device_count"], 1)
         self.assertEqual(graph["stats"]["external_count"], 1)
         self.assertIn("core-sw01", graph["stats"]["ambiguous_identities"])
 

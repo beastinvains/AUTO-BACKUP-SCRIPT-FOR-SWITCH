@@ -11,10 +11,11 @@ const ALL = "All";
 export function TopologyPage({ navigate }: { navigate: (page: string, param?: string, tab?: string) => void }) {
   const [site, setSite] = useState(ALL); const [vendor, setVendor] = useState(ALL);
   const [type, setType] = useState(ALL); const [status, setStatus] = useState(ALL);
+  const [showEndDevices, setShowEndDevices] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true); const [showLinks, setShowLinks] = useState(true);
-  const filters = { site: site === ALL ? undefined : site, vendor: vendor === ALL ? undefined : vendor, device_type: type === ALL ? undefined : type, status: status === ALL ? undefined : status };
-  const result = useAsync<Graph>(() => api.topology(filters), [site, vendor, type, status]);
+  const filters = { site: site === ALL ? undefined : site, vendor: vendor === ALL ? undefined : vendor, device_type: type === ALL ? undefined : type, status: status === ALL ? undefined : status, show_end_devices: showEndDevices };
+  const result = useAsync<Graph>(() => api.topology(filters), [site, vendor, type, status, showEndDevices]);
   const graph = result.data;
   useEffect(() => { if (!graph?.nodes.some((node) => node.id === selectedId)) setSelectedId(graph?.nodes[0]?.id ?? null); }, [graph, selectedId]);
   const selected: TopologyNode | null = graph?.nodes.find((node) => node.id === selectedId) ?? null;
@@ -30,9 +31,10 @@ export function TopologyPage({ navigate }: { navigate: (page: string, param?: st
       <select className="filter-select" value={status} onChange={(event) => setStatus(selectValue(event.target.value))}><option>{ALL}</option>{graph.filters.statuses.map((value) => <option key={value}>{value}</option>)}</select>
       <label className="inline"><input type="checkbox" checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)} /> IP labels</label>
       <label className="inline"><input type="checkbox" checked={showLinks} onChange={(event) => setShowLinks(event.target.checked)} /> LLDP links</label>
+      <label className="inline"><input type="checkbox" checked={showEndDevices} onChange={(event) => setShowEndDevices(event.target.checked)} /> Show end devices</label>
     </div>
     <div className="topology-main-view"><TopologyMap nodes={graph.nodes} edges={graph.edges} selectedNodeId={selectedId} onSelectNode={setSelectedId} showLabels={showLabels} showLinks={showLinks} />
-      <aside className="topology-right-sidebar"><div className="netra-panel" style={{ padding: 16 }}><h3>Discovered topology</h3><p>{graph.stats.device_count} managed devices, {graph.stats.external_count} observed external neighbors</p><p>{graph.stats.edge_count} LLDP links · {graph.stats.corroborated_edges} corroborated</p><p>{graph.stats.unresolved_neighbors} unresolved observations</p>{graph.stats.ambiguous_identities.length > 0 && <p>Ambiguous: {graph.stats.ambiguous_identities.join(", ")}</p>}</div>
+      <aside className="topology-right-sidebar"><div className="netra-panel" style={{ padding: 16 }}><h3>Discovered topology</h3><p>{graph.stats.infrastructure_device_count} infrastructure devices, {showEndDevices ? graph.stats.end_device_count : 0} end devices, {graph.stats.external_count} observed external neighbors</p><p>{graph.stats.edge_count} LLDP links · {graph.stats.corroborated_edges} corroborated</p><p>{graph.stats.unresolved_neighbors} unresolved observations</p>{graph.stats.ambiguous_identities.length > 0 && <p>Ambiguous: {graph.stats.ambiguous_identities.join(", ")}</p>}</div>
         {selected && <div className="netra-panel" style={{ padding: 16 }}><h3>{selected.hostname}</h3><p>{selected.vendor ?? "Unknown vendor"} {selected.model ?? ""}</p><p>Address: {selected.management_ip ?? "unmanaged"}</p><p>Site: {selected.site ?? "—"}</p><p>Status: {selected.status} · confidence {selected.confidence}</p><p>{selected.interface_count} interfaces · {selected.neighbor_count} LLDP neighbors</p>{selected.kind === "device" && <button className="btn btn-primary" onClick={() => navigate("devices", selected.id)}>Open device</button>}</div>}</aside>
     </div>
   </div>;

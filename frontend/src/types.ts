@@ -173,6 +173,8 @@ export type TopologyEdge = {
 
 export type TopologyStats = {
   device_count: number;
+  infrastructure_device_count: number;
+  end_device_count: number;
   external_count: number;
   node_count: number;
   edge_count: number;
@@ -201,6 +203,7 @@ export type TopologyFilters = {
   vendor?: string;
   device_type?: string;
   status?: string;
+  show_end_devices?: boolean;
 };
 
 export type DeviceSlice = {
